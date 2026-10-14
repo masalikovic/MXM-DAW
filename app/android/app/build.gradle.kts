@@ -33,6 +33,16 @@ android {
         ndk {
             abiFilters += "arm64-v8a"
         }
+
+        // Plugin Gradle Flutter menambahkan ABI lain ke ndk.abiFilters (daftar
+        // itu bersifat gabungan), sehingga AGP sempat menjalankan CMake untuk
+        // armeabi-v7a. Filter ini membatasi build CMake (libmxm_engine.so) ke
+        // arm64-v8a saja; tools/cek-apk.sh memeriksa ABI yang masuk APK.
+        externalNativeBuild {
+            cmake {
+                abiFilters += "arm64-v8a"
+            }
+        }
     }
 
     // libmxm_engine.so = Rust (staticlib) + adapter C++ (ADR-0003).
