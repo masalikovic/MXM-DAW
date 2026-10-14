@@ -6,6 +6,7 @@ import '../design_system/tokens.dart';
 import '../engine/audio.dart';
 import '../engine/engine.dart';
 import 'pad_grid.dart';
+import 'pola/halaman_pola.dart';
 import 'suara/halaman_suara.dart';
 import 'transport/tap_tempo.dart';
 import 'transport/transport.dart';
@@ -41,6 +42,9 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     noteCount: 0,
   );
   SeqConfig? _seq;
+
+  /// Pad terakhir yang diketuk; dipilih saat halaman Pola dibuka.
+  int _padTerakhir = 0;
   final _tapTempo = TapTempo();
   final _jam = Stopwatch()..start();
 
@@ -170,6 +174,23 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     if (bpm != null) _aturSeq((s) => s.salin(bpm: bpm));
   }
 
+  void _bukaPola() {
+    final audio = widget.audio!;
+    unawaited(
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  HalamanPola(audio: audio, nama: _nama, pad: _padTerakhir),
+            ),
+          )
+          // Swing dan kuantisasi bisa berubah di halaman Pola.
+          .then((_) {
+            if (mounted) setState(() => _seq = audio.pengaturanSeq());
+          }),
+    );
+  }
+
   void _hapusPola() {
     widget.audio!.aturNotPola(const []);
     _segarkanLed();
@@ -218,7 +239,10 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                   aktif: widget.audio != null,
                   nama: _nama,
                   berbunyi: _berbunyi,
-                  onKetuk: (pad, v) => widget.audio?.ketuk(pad, v),
+                  onKetuk: (pad, v) {
+                    _padTerakhir = pad;
+                    widget.audio?.ketuk(pad, v);
+                  },
                   onLepas: (pad) => widget.audio?.lepas(pad),
                   onTahan: widget.audio == null ? null : _bukaSuara,
                 ),
@@ -234,6 +258,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                   onSeq: _aturSeq,
                   onTap: _tap,
                   onHapus: _hapusPola,
+                  onGrid: _bukaPola,
                 ),
             ],
           ),

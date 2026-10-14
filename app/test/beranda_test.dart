@@ -384,6 +384,21 @@ void main() {
     expect(find.text('Pola dikosongkan'), findsOneWidget);
   });
 
+  testWidgets('GRID membuka halaman Pola untuk pad terakhir yang diketuk', (
+    tester,
+  ) async {
+    await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('pad-9')));
+    await tester.tap(find.byKey(const ValueKey('grid')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('POLA A  ·  1 BAR'), findsOneWidget);
+    final chip = tester.widget<ChoiceChip>(
+      find.byKey(const ValueKey('pilih-pad-9')),
+    );
+    expect(chip.selected, isTrue);
+  });
+
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (
     tester,
   ) async {
