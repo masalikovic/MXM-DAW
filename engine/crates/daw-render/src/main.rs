@@ -2,7 +2,8 @@
 //!
 //! Nantinya CLI ini merender proyek dan kit pabrik menjadi WAV tanpa perangkat
 //! audio, untuk tes golden dan benchmark di CI (rencana §9, §12). Saat ini:
-//! `--version`, `--help`, dan `kit <folder>` (M2: dengarkan kit pabrik).
+//! `--version`, `--help`, `kit <folder>` (M2: dengarkan kit pabrik), dan
+//! `demo <berkas.wav>` (M3: beat demo 4 bar dari sequencer, juga tes golden).
 
 use std::process::ExitCode;
 
@@ -17,7 +18,9 @@ Perintah:
   kit <folder> [velocity]
               Render 16 suara kit pabrik ke folder (01-kick.wav, …; 48 kHz,
               stereo, 32-bit float) dengan mesin yang sama persis dengan
-              aplikasi";
+              aplikasi
+  demo <berkas.wav>
+              Render beat demo 4 bar (96 BPM, swing 56 %) lewat sequencer";
 
 /// Hasil satu perintah: teks untuk stdout, atau pesan galat untuk stderr.
 ///
@@ -32,6 +35,11 @@ fn run(args: &[String]) -> Result<String, String> {
             daw_core::engine_version()
         )),
         [perintah, folder] if perintah == "kit" => render_kit(folder, 1.0),
+        [perintah, berkas] if perintah == "demo" => {
+            let audio = render_demo();
+            tulis_wav(std::path::Path::new(berkas), &audio, 48_000)?;
+            Ok(format!("{berkas}: demo 4 bar, {} frame", audio.len() / 2))
+        }
         [perintah, folder, velocity] if perintah == "kit" => {
             let v: f32 = velocity
                 .parse()
@@ -73,6 +81,58 @@ fn render_kit(folder: &str, velocity: f32) -> Result<String, String> {
         ));
     }
     Ok(laporan.join("\n"))
+}
+
+/// Beat demo 4 bar: kick, snare, hi-hat, clap, dan bas, diputar sequencer.
+/// Dipakai `daw-render demo` dan tes golden (`tests/golden.rs`).
+#[must_use]
+fn render_demo() -> Vec<f32> {
+    use daw_core::seq::{Note, Pattern, STEP_TICKS, SeqSettings, TICKS_PER_BAR};
+    let (mut mesin, mut kirim) = daw_core::engine::Engine::new(48_000);
+    let mut notes = Vec::new();
+    let mut not = |langkah: u32, pad: u8, velocity: f32, panjang: u32| {
+        notes.push(Note {
+            tick: langkah * STEP_TICKS,
+            pad,
+            velocity,
+            length: panjang * STEP_TICKS,
+        });
+    };
+    for bar in 0..4 {
+        let b = bar * 16;
+        not(b, 0, 1.0, 1);
+        not(b + 10, 0, 0.8, 1);
+        not(b + 4, 1, 0.9, 1);
+        not(b + 12, 1, 0.9, 1);
+        for i in (0..16).step_by(2) {
+            not(b + i, 3, if i % 4 == 0 { 0.8 } else { 0.55 }, 1);
+        }
+        not(b + 14, 4, 0.6, 2);
+        not(b, 13, 0.9, 3);
+        not(b + 7, 13, 0.7, 2);
+    }
+    not(60, 2, 1.0, 1);
+    kirim.set_settings(&SeqSettings {
+        bpm: 96.0,
+        swing: 0.56,
+        metronome: false,
+        count_in_bars: 0,
+    });
+    kirim.set_pattern(Pattern {
+        bars: 4,
+        notes,
+        ..Pattern::default()
+    });
+    kirim.transport(true, false);
+    // 4 bar pada 96 BPM = 10 detik, ditambah 1 detik ekor.
+    let ticks = f64::from(4 * TICKS_PER_BAR);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let frames = (ticks * 60.0 * 48_000.0 / (96.0 * 960.0)) as usize + 48_000;
+    let mut audio = vec![0.0_f32; frames * 2];
+    for blok in audio.chunks_mut(192 * 2) {
+        mesin.render(blok, 2);
+    }
+    audio
 }
 
 /// Tulis audio stereo float 32-bit ke WAV.
