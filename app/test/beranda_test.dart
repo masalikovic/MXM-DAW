@@ -46,6 +46,67 @@ class MesinPalsu implements MesinAudio {
   @override
   List<String> namaPad() => List.of(nama);
 
+  // Sequencer palsu: mencatat perintah, status bisa diatur tes.
+  final perintah = <String>[];
+  var status = const TransportState(
+    playing: false,
+    recording: false,
+    positionTicks: 0,
+    bar: 1,
+    beat: 1,
+    step: -1,
+    noteCount: 0,
+  );
+  var seq = const SeqConfig(
+    bpm: 120,
+    swing: 0.5,
+    metronome: true,
+    countInBars: 1,
+    bars: 1,
+    quantizeGrid: 240,
+    quantizeStrength: 0,
+  );
+  var not = <NoteData>[];
+
+  @override
+  bool mainkan({required bool rekam}) {
+    perintah.add(rekam ? 'main+rekam' : 'main');
+    return true;
+  }
+
+  @override
+  bool hentikan() {
+    perintah.add('stop');
+    return true;
+  }
+
+  @override
+  bool aturRekam({required bool nyala}) {
+    perintah.add(nyala ? 'rekam' : 'rekam-mati');
+    return true;
+  }
+
+  @override
+  TransportState statusTransport() => status;
+
+  @override
+  SeqConfig pengaturanSeq() => seq;
+
+  @override
+  SeqConfig aturPengaturanSeq(SeqConfig nilai) => seq = nilai.salin(
+    bpm: nilai.bpm.clamp(40, 240),
+    bars: nilai.bars.clamp(1, 16),
+  );
+
+  @override
+  List<NoteData> notPola() => not;
+
+  @override
+  bool aturNotPola(List<NoteData> n) {
+    not = n;
+    return true;
+  }
+
   final impor = <(int, String, int)>[];
   String? galatImpor;
 
@@ -241,6 +302,86 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('A:07  SUARA7'), findsNothing);
+  });
+
+  testWidgets('PLAY lalu STOP', (tester) async {
+    final mesin = await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('main')));
+    expect(mesin.perintah, ['main']);
+
+    mesin.status = const TransportState(
+      playing: true,
+      recording: false,
+      positionTicks: 1000,
+      bar: 1,
+      beat: 2,
+      step: 4,
+      noteCount: 3,
+    );
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(find.text('■ STOP'), findsOneWidget);
+    expect(find.text(' 1.2'), findsOneWidget);
+    expect(find.text('POLA 1 BAR   NOT 3'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('main')));
+    expect(mesin.perintah, ['main', 'stop']);
+  });
+
+  testWidgets('REC saat berhenti = main + rekam; saat bermain = overdub', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('rekam')));
+    expect(mesin.perintah, ['main+rekam']);
+
+    // Count-in: bar negatif.
+    mesin.status = const TransportState(
+      playing: true,
+      recording: true,
+      positionTicks: -2000,
+      bar: -1,
+      beat: 2,
+      step: -1,
+      noteCount: 0,
+    );
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(find.text('-1.2'), findsOneWidget);
+    expect(find.text('● REC'), findsNWidgets(2), reason: 'tombol + layar');
+
+    await tester.tap(find.byKey(const ValueKey('rekam')));
+    expect(mesin.perintah.last, 'rekam-mati');
+  });
+
+  testWidgets('BPM ±, panjang pola, metronom, dan count-in', (tester) async {
+    final mesin = await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('bpm-tambah')));
+    await tester.tap(find.byKey(const ValueKey('bpm-tambah')));
+    await tester.tap(find.byKey(const ValueKey('bpm-kurang')));
+    await tester.tap(find.byKey(const ValueKey('bar')));
+    await tester.tap(find.byKey(const ValueKey('bar')));
+    await tester.tap(find.byKey(const ValueKey('metronom')));
+    await tester.tap(find.byKey(const ValueKey('count-in')));
+    await tester.pump();
+
+    expect(mesin.seq.bpm, 121);
+    expect(mesin.seq.bars, 4);
+    expect(mesin.seq.metronome, isFalse);
+    expect(mesin.seq.countInBars, 2);
+    expect(find.text('BPM 121.0   SW 50%'), findsOneWidget);
+  });
+
+  testWidgets('HAPUS harus ditahan supaya tidak terhapus tak sengaja', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester)
+      ..not = [const NoteData(tick: 0, pad: 0, velocity: 1, length: 240)];
+    await tester.tap(find.byKey(const ValueKey('hapus')));
+    expect(mesin.not, hasLength(1));
+
+    await tester.longPress(find.byKey(const ValueKey('hapus')));
+    await tester.pump();
+    expect(mesin.not, isEmpty);
+    expect(find.text('Pola dikosongkan'), findsOneWidget);
   });
 
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (

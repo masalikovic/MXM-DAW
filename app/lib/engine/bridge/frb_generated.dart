@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 785396625;
+  int get rustContentHash => -1164665268;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -107,10 +107,26 @@ abstract class RustLibApi extends BaseApi {
 
   int crateApiPadsSounding();
 
+  List<NoteData> crateApiPatternNotes();
+
+  SeqConfig crateApiSeqConfig();
+
   PadSettings? crateApiSetPadSettings({
     required int pad,
     required PadSettings settings,
   });
+
+  bool crateApiSetPatternNotes({required List<NoteData> notes});
+
+  SeqConfig crateApiSetSeqConfig({required SeqConfig config});
+
+  bool crateApiTransportPlay({required bool record});
+
+  bool crateApiTransportRecord({required bool enabled});
+
+  TransportState crateApiTransportState();
+
+  bool crateApiTransportStop();
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -417,6 +433,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "pads_sounding", argNames: []);
 
   @override
+  List<NoteData> crateApiPatternNotes() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_note_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiPatternNotesConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPatternNotesConstMeta =>
+      const TaskConstMeta(debugName: "pattern_notes", argNames: []);
+
+  @override
+  SeqConfig crateApiSeqConfig() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_seq_config,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSeqConfigConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSeqConfigConstMeta =>
+      const TaskConstMeta(debugName: "seq_config", argNames: []);
+
+  @override
   PadSettings? crateApiSetPadSettings({
     required int pad,
     required PadSettings settings,
@@ -427,7 +487,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_8(pad, serializer);
           sse_encode_box_autoadd_pad_settings(settings, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_pad_settings,
@@ -444,6 +504,142 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     debugName: "set_pad_settings",
     argNames: ["pad", "settings"],
   );
+
+  @override
+  bool crateApiSetPatternNotes({required List<NoteData> notes}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_note_data(notes, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSetPatternNotesConstMeta,
+        argValues: [notes],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSetPatternNotesConstMeta =>
+      const TaskConstMeta(debugName: "set_pattern_notes", argNames: ["notes"]);
+
+  @override
+  SeqConfig crateApiSetSeqConfig({required SeqConfig config}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_seq_config(config, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_seq_config,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSetSeqConfigConstMeta,
+        argValues: [config],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSetSeqConfigConstMeta =>
+      const TaskConstMeta(debugName: "set_seq_config", argNames: ["config"]);
+
+  @override
+  bool crateApiTransportPlay({required bool record}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(record, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTransportPlayConstMeta,
+        argValues: [record],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTransportPlayConstMeta =>
+      const TaskConstMeta(debugName: "transport_play", argNames: ["record"]);
+
+  @override
+  bool crateApiTransportRecord({required bool enabled}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTransportRecordConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTransportRecordConstMeta =>
+      const TaskConstMeta(debugName: "transport_record", argNames: ["enabled"]);
+
+  @override
+  TransportState crateApiTransportState() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_transport_state,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTransportStateConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTransportStateConstMeta =>
+      const TaskConstMeta(debugName: "transport_state", argNames: []);
+
+  @override
+  bool crateApiTransportStop() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTransportStopConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTransportStopConstMeta =>
+      const TaskConstMeta(debugName: "transport_stop", argNames: []);
 
   @protected
   String dco_decode_String(dynamic raw) {
@@ -488,6 +684,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SeqConfig dco_decode_box_autoadd_seq_config(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_seq_config(raw);
+  }
+
+  @protected
   double dco_decode_f_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
@@ -512,9 +714,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeI64(raw);
+  }
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<NoteData> dco_decode_list_note_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_note_data).toList();
   }
 
   @protected
@@ -533,6 +747,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  NoteData dco_decode_note_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return NoteData(
+      tick: dco_decode_u_32(arr[0]),
+      pad: dco_decode_u_8(arr[1]),
+      velocity: dco_decode_f_32(arr[2]),
+      length: dco_decode_u_32(arr[3]),
+    );
   }
 
   @protected
@@ -580,6 +808,40 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       throw Exception('Expected 2 elements, got ${arr.length}');
     }
     return (dco_decode_u_32(arr[0]), dco_decode_u_32(arr[1]));
+  }
+
+  @protected
+  SeqConfig dco_decode_seq_config(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return SeqConfig(
+      bpm: dco_decode_f_32(arr[0]),
+      swing: dco_decode_f_32(arr[1]),
+      metronome: dco_decode_bool(arr[2]),
+      countInBars: dco_decode_u_8(arr[3]),
+      bars: dco_decode_u_8(arr[4]),
+      quantizeGrid: dco_decode_u_32(arr[5]),
+      quantizeStrength: dco_decode_f_32(arr[6]),
+    );
+  }
+
+  @protected
+  TransportState dco_decode_transport_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return TransportState(
+      playing: dco_decode_bool(arr[0]),
+      recording: dco_decode_bool(arr[1]),
+      positionTicks: dco_decode_i_64(arr[2]),
+      bar: dco_decode_i_32(arr[3]),
+      beat: dco_decode_i_32(arr[4]),
+      step: dco_decode_i_32(arr[5]),
+      noteCount: dco_decode_u_32(arr[6]),
+    );
   }
 
   @protected
@@ -657,6 +919,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SeqConfig sse_decode_box_autoadd_seq_config(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_seq_config(deserializer));
+  }
+
+  @protected
   double sse_decode_f_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat32();
@@ -682,6 +950,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -689,6 +963,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<NoteData> sse_decode_list_note_data(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NoteData>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_note_data(deserializer));
     }
     return ans_;
   }
@@ -712,6 +998,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  NoteData sse_decode_note_data(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_tick = sse_decode_u_32(deserializer);
+    var var_pad = sse_decode_u_8(deserializer);
+    var var_velocity = sse_decode_f_32(deserializer);
+    var var_length = sse_decode_u_32(deserializer);
+    return NoteData(
+      tick: var_tick,
+      pad: var_pad,
+      velocity: var_velocity,
+      length: var_length,
+    );
   }
 
   @protected
@@ -780,6 +1081,48 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SeqConfig sse_decode_seq_config(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_bpm = sse_decode_f_32(deserializer);
+    var var_swing = sse_decode_f_32(deserializer);
+    var var_metronome = sse_decode_bool(deserializer);
+    var var_countInBars = sse_decode_u_8(deserializer);
+    var var_bars = sse_decode_u_8(deserializer);
+    var var_quantizeGrid = sse_decode_u_32(deserializer);
+    var var_quantizeStrength = sse_decode_f_32(deserializer);
+    return SeqConfig(
+      bpm: var_bpm,
+      swing: var_swing,
+      metronome: var_metronome,
+      countInBars: var_countInBars,
+      bars: var_bars,
+      quantizeGrid: var_quantizeGrid,
+      quantizeStrength: var_quantizeStrength,
+    );
+  }
+
+  @protected
+  TransportState sse_decode_transport_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_playing = sse_decode_bool(deserializer);
+    var var_recording = sse_decode_bool(deserializer);
+    var var_positionTicks = sse_decode_i_64(deserializer);
+    var var_bar = sse_decode_i_32(deserializer);
+    var var_beat = sse_decode_i_32(deserializer);
+    var var_step = sse_decode_i_32(deserializer);
+    var var_noteCount = sse_decode_u_32(deserializer);
+    return TransportState(
+      playing: var_playing,
+      recording: var_recording,
+      positionTicks: var_positionTicks,
+      bar: var_bar,
+      beat: var_beat,
+      step: var_step,
+      noteCount: var_noteCount,
+    );
+  }
+
+  @protected
   int sse_decode_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint32();
@@ -837,6 +1180,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_seq_config(
+    SeqConfig self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_seq_config(self, serializer);
+  }
+
+  @protected
   void sse_encode_f_32(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat32(self);
@@ -861,11 +1213,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_note_data(
+    List<NoteData> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_note_data(item, serializer);
     }
   }
 
@@ -899,6 +1269,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_note_data(NoteData self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.tick, serializer);
+    sse_encode_u_8(self.pad, serializer);
+    sse_encode_f_32(self.velocity, serializer);
+    sse_encode_u_32(self.length, serializer);
   }
 
   @protected
@@ -945,6 +1324,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.$1, serializer);
     sse_encode_u_32(self.$2, serializer);
+  }
+
+  @protected
+  void sse_encode_seq_config(SeqConfig self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_32(self.bpm, serializer);
+    sse_encode_f_32(self.swing, serializer);
+    sse_encode_bool(self.metronome, serializer);
+    sse_encode_u_8(self.countInBars, serializer);
+    sse_encode_u_8(self.bars, serializer);
+    sse_encode_u_32(self.quantizeGrid, serializer);
+    sse_encode_f_32(self.quantizeStrength, serializer);
+  }
+
+  @protected
+  void sse_encode_transport_state(
+    TransportState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.playing, serializer);
+    sse_encode_bool(self.recording, serializer);
+    sse_encode_i_64(self.positionTicks, serializer);
+    sse_encode_i_32(self.bar, serializer);
+    sse_encode_i_32(self.beat, serializer);
+    sse_encode_i_32(self.step, serializer);
+    sse_encode_u_32(self.noteCount, serializer);
   }
 
   @protected

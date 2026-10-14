@@ -7,8 +7,11 @@ import '../engine/audio.dart';
 import '../engine/engine.dart';
 import 'pad_grid.dart';
 import 'suara/halaman_suara.dart';
+import 'transport/tap_tempo.dart';
+import 'transport/transport.dart';
 
-/// Layar M2: versi mesin, panel kesehatan mesin, dan 16 pad kit pabrik.
+/// Layar utama (Pocket, rencana §6.1): panel kesehatan mesin, layar segmen,
+/// 16 pad, dan transport sequencer.
 class Beranda extends StatefulWidget {
   const Beranda({required this.engine, this.audio, super.key});
 
@@ -28,6 +31,18 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   Timer? _penyegarLed;
   int _berbunyi = 0;
   List<String> _nama = const [];
+  TransportState _status = const TransportState(
+    playing: false,
+    recording: false,
+    positionTicks: 0,
+    bar: 1,
+    beat: 1,
+    step: -1,
+    noteCount: 0,
+  );
+  SeqConfig? _seq;
+  final _tapTempo = TapTempo();
+  final _jam = Stopwatch()..start();
 
   @override
   void initState() {
@@ -35,12 +50,14 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     if (widget.audio != null) {
       _nama = widget.audio!.namaPad();
+      _seq = widget.audio!.pengaturanSeq();
       unawaited(_mulai());
       _penyegar = Timer.periodic(
         const Duration(milliseconds: 500),
         (_) => _segarkan(),
       );
-      // LED pad ±30 kali per detik; hanya digambar ulang bila berubah.
+      // LED pad dan posisi transport ±30 kali per detik; hanya digambar ulang
+      // bila berubah.
       _penyegarLed = Timer.periodic(
         const Duration(milliseconds: 33),
         (_) => _segarkanLed(),
@@ -117,7 +134,47 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     final audio = widget.audio;
     if (audio == null || !mounted) return;
     final berbunyi = audio.padBerbunyi();
-    if (berbunyi != _berbunyi) setState(() => _berbunyi = berbunyi);
+    final status = audio.statusTransport();
+    if (berbunyi != _berbunyi || status != _status) {
+      setState(() {
+        _berbunyi = berbunyi;
+        _status = status;
+      });
+    }
+  }
+
+  void _main() {
+    final audio = widget.audio!;
+    _status.playing ? audio.hentikan() : audio.mainkan(rekam: false);
+    _segarkanLed();
+  }
+
+  /// REC saat berhenti: mulai dengan count-in. REC saat bermain: overdub
+  /// hidup/mati tanpa berhenti.
+  void _rekam() {
+    final audio = widget.audio!;
+    _status.playing
+        ? audio.aturRekam(nyala: !_status.recording)
+        : audio.mainkan(rekam: true);
+    _segarkanLed();
+  }
+
+  void _aturSeq(SeqConfig Function(SeqConfig) ubah) {
+    final seq = _seq;
+    if (seq == null) return;
+    setState(() => _seq = widget.audio!.aturPengaturanSeq(ubah(seq)));
+  }
+
+  void _tap() {
+    final bpm = _tapTempo.ketuk(_jam.elapsed);
+    if (bpm != null) _aturSeq((s) => s.salin(bpm: bpm));
+  }
+
+  void _hapusPola() {
+    widget.audio!.aturNotPola(const []);
+    _segarkanLed();
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Pola dikosongkan')));
   }
 
   @override
@@ -149,8 +206,12 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                   reason,
                   style: TextStyle(color: t.textMuted, fontSize: 11),
                 ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               PanelKesehatan(kesehatan: _kesehatan, galat: _galat),
+              if (_seq case final seq?) ...[
+                const SizedBox(height: 8),
+                LayarSegmen(status: _status, seq: seq),
+              ],
               const Spacer(),
               Center(
                 child: KisiPad(
@@ -163,6 +224,17 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                 ),
               ),
               const Spacer(),
+              if (_seq case final seq?)
+                PanelTransport(
+                  aktif: widget.audio != null,
+                  status: _status,
+                  seq: seq,
+                  onMain: _main,
+                  onRekam: _rekam,
+                  onSeq: _aturSeq,
+                  onTap: _tap,
+                  onHapus: _hapusPola,
+                ),
             ],
           ),
         ),
@@ -201,7 +273,7 @@ class PanelKesehatan extends StatelessWidget {
       ],
     ];
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: t.displayBg,
         borderRadius: BorderRadius.circular(6),
@@ -215,8 +287,8 @@ class PanelKesehatan extends StatelessWidget {
               style: TextStyle(
                 color: b.startsWith('AUDIO') ? t.displayAccent : t.displayOn,
                 fontFamily: 'monospace',
-                fontSize: 13,
-                height: 1.4,
+                fontSize: 11,
+                height: 1.3,
               ),
             ),
         ],

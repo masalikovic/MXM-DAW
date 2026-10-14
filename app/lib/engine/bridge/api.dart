@@ -7,7 +7,7 @@ import 'frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Versi mesin, mis. `"0.1.0"`.
 ///
@@ -82,6 +82,39 @@ Future<PadSettings> padImportWav({
   fileName: fileName,
   bytes: bytes,
 );
+
+/// Pengaturan sequencer dan pola saat ini.
+SeqConfig seqConfig() => RustLib.instance.api.crateApiSeqConfig();
+
+/// Simpan pengaturan (nilai dibatasi ke jangkauan sah). Mengembalikan nilai
+/// yang benar-benar tersimpan.
+SeqConfig setSeqConfig({required SeqConfig config}) =>
+    RustLib.instance.api.crateApiSetSeqConfig(config: config);
+
+/// Semua not pola (tick mentah).
+List<NoteData> patternNotes() => RustLib.instance.api.crateApiPatternNotes();
+
+/// Ganti semua not pola (mis. dari grid langkah, atau dikosongkan). Not di
+/// luar panjang pola atau untuk pad yang tidak ada dibuang.
+bool setPatternNotes({required List<NoteData> notes}) =>
+    RustLib.instance.api.crateApiSetPatternNotes(notes: notes);
+
+/// Mulai bermain dari awal pola. `record`: rekam ketukan (didahului
+/// count-in). `false` bila mesin belum berjalan.
+bool transportPlay({required bool record}) =>
+    RustLib.instance.api.crateApiTransportPlay(record: record);
+
+/// Berhenti.
+bool transportStop() => RustLib.instance.api.crateApiTransportStop();
+
+/// Rekam hidup/mati tanpa berhenti (overdub).
+bool transportRecord({required bool enabled}) =>
+    RustLib.instance.api.crateApiTransportRecord(enabled: enabled);
+
+/// Posisi transport. Dipanggil ±30 kali per detik oleh layar; sekaligus
+/// memasukkan ketukan yang direkam ke pola.
+TransportState transportState() =>
+    RustLib.instance.api.crateApiTransportState();
 
 /// Angka kesehatan mesin saat ini.
 AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
@@ -202,6 +235,42 @@ enum FilterKind {
   bandPass,
 }
 
+/// Satu not pola (rencana §10): tick mentah, 960 per ketukan.
+class NoteData {
+  /// Posisi (tick).
+  final int tick;
+
+  /// Nomor pad.
+  final int pad;
+
+  /// Kekuatan 0..1.
+  final double velocity;
+
+  /// Panjang (tick).
+  final int length;
+
+  const NoteData({
+    required this.tick,
+    required this.pad,
+    required this.velocity,
+    required this.length,
+  });
+
+  @override
+  int get hashCode =>
+      tick.hashCode ^ pad.hashCode ^ velocity.hashCode ^ length.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NoteData &&
+          runtimeType == other.runtimeType &&
+          tick == other.tick &&
+          pad == other.pad &&
+          velocity == other.velocity &&
+          length == other.length;
+}
+
 /// Parameter satu pad untuk layar Sound. Satuan sama dengan rencana §10.
 class PadSettings {
   /// Level 0..1.
@@ -317,4 +386,118 @@ enum PlayKind {
 
   /// Mengulang selama ditekan.
   loop,
+}
+
+/// Pengaturan sequencer dan pola untuk layar (rencana §4.3, §10).
+class SeqConfig {
+  /// Tempo 40..240 BPM, satu desimal.
+  final double bpm;
+
+  /// Swing 0,5..0,75.
+  final double swing;
+
+  /// Metronom saat merekam.
+  final bool metronome;
+
+  /// Count-in 0..=2 bar.
+  final int countInBars;
+
+  /// Panjang pola 1..=16 bar.
+  final int bars;
+
+  /// Grid kuantisasi (tick; 240 = 1/16; 0 = mati).
+  final int quantizeGrid;
+
+  /// Kekuatan kuantisasi 0..1.
+  final double quantizeStrength;
+
+  const SeqConfig({
+    required this.bpm,
+    required this.swing,
+    required this.metronome,
+    required this.countInBars,
+    required this.bars,
+    required this.quantizeGrid,
+    required this.quantizeStrength,
+  });
+
+  @override
+  int get hashCode =>
+      bpm.hashCode ^
+      swing.hashCode ^
+      metronome.hashCode ^
+      countInBars.hashCode ^
+      bars.hashCode ^
+      quantizeGrid.hashCode ^
+      quantizeStrength.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SeqConfig &&
+          runtimeType == other.runtimeType &&
+          bpm == other.bpm &&
+          swing == other.swing &&
+          metronome == other.metronome &&
+          countInBars == other.countInBars &&
+          bars == other.bars &&
+          quantizeGrid == other.quantizeGrid &&
+          quantizeStrength == other.quantizeStrength;
+}
+
+/// Posisi transport untuk layar segmen.
+class TransportState {
+  /// Sedang bermain.
+  final bool playing;
+
+  /// Sedang merekam.
+  final bool recording;
+
+  /// Tick sejak mulai; negatif saat count-in.
+  final PlatformInt64 positionTicks;
+
+  /// Bar di dalam pola (1..), atau −1/−2 saat count-in.
+  final int bar;
+
+  /// Ketukan di dalam bar (1..=4).
+  final int beat;
+
+  /// Langkah 1/16 di dalam pola (0..), −1 saat berhenti atau count-in.
+  final int step;
+
+  /// Jumlah not di pola.
+  final int noteCount;
+
+  const TransportState({
+    required this.playing,
+    required this.recording,
+    required this.positionTicks,
+    required this.bar,
+    required this.beat,
+    required this.step,
+    required this.noteCount,
+  });
+
+  @override
+  int get hashCode =>
+      playing.hashCode ^
+      recording.hashCode ^
+      positionTicks.hashCode ^
+      bar.hashCode ^
+      beat.hashCode ^
+      step.hashCode ^
+      noteCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransportState &&
+          runtimeType == other.runtimeType &&
+          playing == other.playing &&
+          recording == other.recording &&
+          positionTicks == other.positionTicks &&
+          bar == other.bar &&
+          beat == other.beat &&
+          step == other.step &&
+          noteCount == other.noteCount;
 }

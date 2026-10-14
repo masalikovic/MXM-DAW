@@ -15,7 +15,7 @@ use daw_core::bank::PadBank;
 use daw_core::engine::{Engine, EngineStats, EventSender};
 use daw_core::pad::PadParams;
 use daw_core::sampel::Sampel;
-use daw_core::seq::Sequence;
+use daw_core::seq::{Pattern, SeqSettings, Sequence};
 
 /// Sample rate mesin; adapter meminta Oboe mengonversi bila perangkat berbeda.
 pub(crate) const SAMPLE_RATE: u32 = 48_000;
@@ -121,6 +121,71 @@ pub(crate) fn atur_pad(pad: usize, params: &PadParams) -> bool {
     bank.get_or_insert_with(PadBank::factory)
         .set_params(pad, params)
         .is_some()
+}
+
+/// Baca model sequencer: dari mesin yang berjalan, atau yang disimpan.
+pub(crate) fn baca_seq<R>(f: impl FnOnce(&Sequence) -> R) -> R {
+    let ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_ref() {
+        return f(ui.pengirim.sequence());
+    }
+    let mut seq = kunci_sekuens();
+    f(seq.get_or_insert_with(Sequence::default))
+}
+
+/// Ganti pola dan/atau pengaturan sequencer.
+pub(crate) fn atur_seq(pola: Option<Pattern>, pengaturan: Option<SeqSettings>) -> bool {
+    let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_mut() {
+        let mut ok = true;
+        if let Some(p) = pengaturan {
+            ok &= ui.pengirim.set_settings(&p);
+        }
+        if let Some(p) = pola {
+            ok &= ui.pengirim.set_pattern(p);
+        }
+        return ok;
+    }
+    let mut seq = kunci_sekuens();
+    let seq = seq.get_or_insert_with(Sequence::default);
+    if let Some(p) = pengaturan {
+        seq.settings = p.sanitized();
+    }
+    if let Some(p) = pola {
+        seq.pattern = p;
+    }
+    true
+}
+
+/// Perintah transport; `false` bila mesin belum berjalan.
+pub(crate) fn transport(main: bool, rekam: bool) -> bool {
+    SISI_UI
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+        .is_some_and(|ui| ui.pengirim.transport(main, rekam))
+}
+
+/// Rekam hidup/mati sambil bermain (overdub).
+pub(crate) fn atur_rekam(rekam: bool) -> bool {
+    SISI_UI
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+        .is_some_and(|ui| ui.pengirim.set_recording(rekam))
+}
+
+/// Status transport: (bermain, merekam, posisi tick). Sekaligus memasukkan
+/// ketukan yang direkam ke pola, dikompensasi latensi keluaran dari Oboe.
+pub(crate) fn status_transport() -> (bool, bool, i64) {
+    let latensi = kesehatan().latency_ms.max(0.0);
+    let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    let Some(ui) = ui.as_mut() else {
+        return (false, false, 0);
+    };
+    ui.pengirim.poll_recording(latensi);
+    let s = &ui.stats;
+    (s.playing(), s.recording(), s.position_ticks())
 }
 
 /// Ganti sampel pad.
