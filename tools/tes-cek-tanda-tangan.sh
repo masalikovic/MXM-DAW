@@ -8,9 +8,11 @@ trap 'rm -rf "$kerja"' EXIT
 gagal=0
 touch "$kerja/uji.apk"
 
-# apksigner tiruan: mencetak satu baris "Signer" per sidik jari di $kerja/penanda.
+# apksigner tiruan: mencetak satu baris "Signer" per sidik jari di $kerja/penanda,
+# atau isi $kerja/mentah apa adanya bila berkas itu ada.
 cat >"$kerja/apksigner" <<'TIRU'
 #!/usr/bin/env bash
+if [ -f "$(dirname "$0")/mentah" ]; then cat "$(dirname "$0")/mentah"; exit 0; fi
 i=1
 while read -r s; do
   echo "Signer #$i certificate DN: CN=Pemilik"
@@ -44,5 +46,15 @@ skenario "kunci lain ditolak" 1 "$A" "$B"
 skenario "sidik jari belum diisi ditolak" 1 "" "$A"
 skenario "dua penanda tangan ditolak" 1 "$A" "$A,$B"
 skenario "APK tanpa tanda tangan ditolak" 1 "$A" ""
+
+# Format skema v3.1: sertifikat yang sama muncul di dua baris berbeda.
+cat >"$kerja/mentah" <<MENTAH
+Signer (minSdkVersion=33, maxSdkVersion=2147483647) certificate DN: CN=Pemilik
+Signer (minSdkVersion=33, maxSdkVersion=2147483647) certificate SHA-256 digest: $A
+Signer #1 certificate DN: CN=Pemilik
+Signer #1 certificate SHA-256 digest: $A
+MENTAH
+skenario "format v3.1, satu sertifikat di dua baris diterima" 0 "$A" ""
+rm "$kerja/mentah"
 
 exit "$gagal"

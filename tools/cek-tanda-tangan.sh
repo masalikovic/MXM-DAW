@@ -24,10 +24,16 @@ fi
 baku() { tr -d ': \r' | tr 'A-F' 'a-f'; }
 
 keluaran="$("$APKSIGNER" verify --print-certs "$apk")"
-sidik_apk="$(sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p' <<<"$keluaran" | baku)"
+# Format baris berbeda antarversi apksigner, mis. "Signer #1 certificate
+# SHA-256 digest: …" atau "Signer (minSdkVersion=…) certificate SHA-256
+# digest: …" (skema v3.1). Satu sertifikat bisa muncul di beberapa baris,
+# jadi yang dihitung adalah sertifikat yang berbeda.
+sidik_apk="$(sed -n 's/.*[Cc]ertificate SHA-256 digest: *//p' <<<"$keluaran" | baku | sort -u)"
 jumlah="$(grep -c . <<<"$sidik_apk" || true)"
 if [ "$jumlah" -ne 1 ]; then
   echo "GAGAL: APK harus ditandatangani tepat satu kunci; ditemukan $jumlah."
+  echo "       Baris sertifikat dari apksigner (informasi publik):"
+  { grep -i 'certificate\|signer' <<<"$keluaran" || echo "(tidak ada)"; } | sed 's/^/         /'
   exit 1
 fi
 
