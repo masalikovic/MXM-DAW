@@ -1,0 +1,19 @@
+# Aturan analisis Dart. CI menjalankan `flutter analyze --fatal-infos`,
+# jadi temuan sekecil apa pun menggagalkan CI (rencana §13.2).
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    - always_declare_return_types
+    - prefer_final_locals
+    - prefer_single_quotes
+    - unawaited_futures
