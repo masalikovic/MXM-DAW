@@ -73,15 +73,37 @@ pub fn audio_stop() {
     crate::audio::lepas_mesin();
 }
 
-/// Pad ditekan dengan kekuatan 0..=1. `false` bila mesin belum berjalan.
+/// Pad `pad` (0..16) ditekan dengan kekuatan 0..=1. `false` bila mesin belum
+/// berjalan atau nomor pad salah.
 ///
 /// `sync`: dipanggil langsung dari event sentuh, hanya memasukkan event ke
 /// antrean (mikrodetik), tanpa menunggu thread audio (rencana §7).
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn pad_hit(velocity: f32) -> bool {
-    // M2 langkah 1: pad di layar masih satu, dan memainkan pad 1 (KICK).
-    crate::audio::ketuk(0, velocity)
+pub fn pad_hit(pad: u8, velocity: f32) -> bool {
+    crate::audio::ketuk(usize::from(pad), velocity)
+}
+
+/// Pad `pad` dilepas (penting untuk mode gate dan loop).
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pad_release(pad: u8) -> bool {
+    crate::audio::lepas(usize::from(pad))
+}
+
+/// Bit ke-`n` menyala bila pad `n` sedang berbunyi; untuk LED pad. Murah
+/// (satu baca atomik), jadi aman dipanggil 30 kali per detik.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pads_sounding() -> u32 {
+    crate::audio::pad_berbunyi()
+}
+
+/// Nama suara ke-16 pad, mis. `"KICK"`.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pad_names() -> Vec<String> {
+    crate::audio::nama_pad()
 }
 
 /// Angka kesehatan mesin saat ini.

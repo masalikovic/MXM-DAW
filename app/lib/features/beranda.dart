@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import '../design_system/tokens.dart';
 import '../engine/audio.dart';
 import '../engine/engine.dart';
+import 'pad_grid.dart';
 
-/// Layar M1: versi mesin, panel kesehatan mesin, dan satu pad kick.
+/// Layar M2: versi mesin, panel kesehatan mesin, dan 16 pad kit pabrik.
 class Beranda extends StatefulWidget {
   const Beranda({required this.engine, this.audio, super.key});
 
@@ -23,18 +24,25 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   Timer? _penyegar;
   AudioHealth? _kesehatan;
   String? _galat;
-  bool _ledMenyala = false;
-  Timer? _ledPadam;
+  Timer? _penyegarLed;
+  int _berbunyi = 0;
+  List<String> _nama = const [];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (widget.audio != null) {
+      _nama = widget.audio!.namaPad();
       unawaited(_mulai());
       _penyegar = Timer.periodic(
         const Duration(milliseconds: 500),
         (_) => _segarkan(),
+      );
+      // LED pad ±30 kali per detik; hanya digambar ulang bila berubah.
+      _penyegarLed = Timer.periodic(
+        const Duration(milliseconds: 33),
+        (_) => _segarkanLed(),
       );
     }
   }
@@ -43,7 +51,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _penyegar?.cancel();
-    _ledPadam?.cancel();
+    _penyegarLed?.cancel();
     unawaited(widget.audio?.berhenti());
     super.dispose();
   }
@@ -82,13 +90,11 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     setState(() => _kesehatan = audio.kesehatan());
   }
 
-  void _ketuk(double velocity) {
-    widget.audio?.ketuk(velocity);
-    _ledPadam?.cancel();
-    setState(() => _ledMenyala = true);
-    _ledPadam = Timer(const Duration(milliseconds: 120), () {
-      if (mounted) setState(() => _ledMenyala = false);
-    });
+  void _segarkanLed() {
+    final audio = widget.audio;
+    if (audio == null || !mounted) return;
+    final berbunyi = audio.padBerbunyi();
+    if (berbunyi != _berbunyi) setState(() => _berbunyi = berbunyi);
   }
 
   @override
@@ -124,10 +130,12 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
               PanelKesehatan(kesehatan: _kesehatan, galat: _galat),
               const Spacer(),
               Center(
-                child: PadKick(
+                child: KisiPad(
                   aktif: widget.audio != null,
-                  ledMenyala: _ledMenyala,
-                  onKetuk: _ketuk,
+                  nama: _nama,
+                  berbunyi: _berbunyi,
+                  onKetuk: (pad, v) => widget.audio?.ketuk(pad, v),
+                  onLepas: (pad) => widget.audio?.lepas(pad),
                 ),
               ),
               const Spacer(),
@@ -193,78 +201,4 @@ class PanelKesehatan extends StatelessWidget {
   }
 
   static String _persen(double x) => '${(x * 100).round()}%';
-}
-
-/// Pad besar untuk kick. Memakai `Listener` (event pointer mentah), bukan
-/// `GestureDetector`, supaya tidak ada jeda "arena gesture" (rencana §7).
-/// Velocity dari posisi vertikal: atas = 1,0, bawah = 0,4 (rencana §4.1).
-class PadKick extends StatelessWidget {
-  const PadKick({
-    required this.aktif,
-    required this.ledMenyala,
-    required this.onKetuk,
-    super.key,
-  });
-
-  final bool aktif;
-  final bool ledMenyala;
-  final ValueChanged<double> onKetuk;
-
-  static const ukuran = 200.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = MxmTokens.of(context);
-    return Semantics(
-      button: true,
-      enabled: aktif,
-      label: 'Pad kick',
-      child: Listener(
-        onPointerDown: aktif
-            ? (e) => onKetuk(
-                (1.0 - 0.6 * (e.localPosition.dy / ukuran)).clamp(0.4, 1.0),
-              )
-            : null,
-        child: Container(
-          key: const ValueKey('pad-kick'),
-          width: ukuran,
-          height: ukuran,
-          decoration: BoxDecoration(
-            color: aktif ? t.keyDark : t.bodyEdge,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: 10,
-                left: 10,
-                child: AnimatedContainer(
-                  duration: Duration(milliseconds: ledMenyala ? 0 : 140),
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: ledMenyala
-                        ? t.groupA
-                        : t.keyLight.withValues(alpha: 0.15),
-                  ),
-                ),
-              ),
-              Center(
-                child: Text(
-                  'KICK',
-                  style: TextStyle(
-                    color: t.legendOnDark,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

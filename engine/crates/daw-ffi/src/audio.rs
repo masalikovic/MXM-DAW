@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use daw_core::engine::{Engine, EngineStats, EventSender};
+use daw_core::kit::FACTORY_NAMES;
+use daw_core::pad::PAD_COUNT;
 
 /// Sample rate mesin; adapter meminta Oboe mengonversi bila perangkat berbeda.
 pub(crate) const SAMPLE_RATE: u32 = 48_000;
@@ -82,6 +84,38 @@ pub(crate) fn ketuk(pad: usize, velocity: f32) -> bool {
         .unwrap_or_else(PoisonError::into_inner)
         .as_mut()
         .is_some_and(|ui| ui.pengirim.hit(pad, velocity))
+}
+
+/// Lepas pad dari UI. `false` bila mesin belum berjalan atau pad tidak ada.
+pub(crate) fn lepas(pad: usize) -> bool {
+    SISI_UI
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+        .is_some_and(|ui| ui.pengirim.release(pad))
+}
+
+/// Bitmask pad yang sedang berbunyi (0 bila mesin belum berjalan).
+pub(crate) fn pad_berbunyi() -> u32 {
+    SISI_UI
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .map_or(0, |ui| ui.stats.pads_sounding())
+}
+
+/// Nama suara pad; nama kit pabrik bila mesin belum berjalan.
+pub(crate) fn nama_pad() -> Vec<String> {
+    let kunci = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    (0..PAD_COUNT)
+        .map(|i| {
+            kunci
+                .as_ref()
+                .and_then(|ui| ui.pengirim.name(i))
+                .unwrap_or(FACTORY_NAMES[i])
+                .to_owned()
+        })
+        .collect()
 }
 
 /// Statistik mesin: (suara aktif, ketukan dimainkan, ketukan dibuang).
@@ -171,7 +205,10 @@ pub(crate) use adapter::{berhenti, kesehatan, mulai};
 
 #[cfg(test)]
 mod tests {
-    use super::{ketuk, lepas_mesin, mxm_engine_render, pasang_mesin, statistik};
+    use super::{
+        ketuk, lepas, lepas_mesin, mxm_engine_render, nama_pad, pad_berbunyi, pasang_mesin,
+        statistik,
+    };
 
     fn render(frames: usize) -> Vec<f32> {
         let mut buf = vec![1.0_f32; frames * 2];
@@ -189,12 +226,20 @@ mod tests {
         // Tanpa mesin: buffer diisi hening, ketukan ditolak.
         assert!(render(64).iter().all(|&v| v == 0.0));
         assert!(!ketuk(0, 1.0));
+        assert!(!lepas(0));
+        assert_eq!(pad_berbunyi(), 0);
+        assert_eq!(nama_pad()[0], "KICK", "nama kit pabrik walau mesin mati");
 
         pasang_mesin();
         assert!(ketuk(0, 1.0));
+        assert!(ketuk(13, 1.0));
+        assert!(!ketuk(16, 1.0), "pad 17 tidak ada");
         let x = render(2_400);
         assert!(x.iter().any(|v| v.abs() > 0.3), "kick tidak berbunyi");
-        assert_eq!(statistik().1, 1);
+        assert_eq!(statistik().1, 2);
+        assert_eq!(pad_berbunyi(), (1 << 0) | (1 << 13));
+        assert!(lepas(13));
+        assert_eq!(nama_pad().len(), 16);
 
         lepas_mesin();
         assert!(!ketuk(0, 1.0));

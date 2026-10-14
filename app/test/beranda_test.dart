@@ -9,7 +9,9 @@ class MesinPalsu implements MesinAudio {
   MesinPalsu({this.galatMulai});
 
   final Object? galatMulai;
-  final ketukan = <double>[];
+  final ketukan = <(int, double)>[];
+  final lepasan = <int>[];
+  var berbunyi = 0;
   var mulaiDipanggil = 0;
   var berhentiDipanggil = 0;
 
@@ -23,10 +25,22 @@ class MesinPalsu implements MesinAudio {
   Future<void> berhenti() async => berhentiDipanggil++;
 
   @override
-  bool ketuk(double velocity) {
-    ketukan.add(velocity);
+  bool ketuk(int pad, double velocity) {
+    ketukan.add((pad, velocity));
     return true;
   }
+
+  @override
+  bool lepas(int pad) {
+    lepasan.add(pad);
+    return true;
+  }
+
+  @override
+  int padBerbunyi() => berbunyi;
+
+  @override
+  List<String> namaPad() => [for (var i = 1; i <= 16; i++) 'SUARA$i'];
 
   @override
   AudioHealth kesehatan() => const AudioHealth(
@@ -48,6 +62,10 @@ class MesinPalsu implements MesinAudio {
 }
 
 Future<MesinPalsu> pasang(WidgetTester tester, {Object? galatMulai}) async {
+  // Layar HP kecil (360 × 740 dp), seperti Redmi 13C.
+  tester.view.physicalSize = const Size(1080, 2220);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   final mesin = MesinPalsu(galatMulai: galatMulai);
   await tester.pumpWidget(
     MxmDawApp(engine: const EngineReady('0.1.0'), audio: mesin),
@@ -69,19 +87,81 @@ void main() {
     expect(find.text('SUARA 1   KETUK 7'), findsOneWidget);
   });
 
+  testWidgets('16 pad dengan nama suara dari mesin', (tester) async {
+    await pasang(tester);
+
+    for (var i = 0; i < 16; i++) {
+      expect(find.byKey(ValueKey('pad-$i')), findsOneWidget);
+    }
+    expect(find.text('SUARA1'), findsOneWidget);
+    expect(find.text('SUARA16'), findsOneWidget);
+  });
+
+  testWidgets('pad muat di layar 360 dp dan tidak lebih kecil dari 48 dp', (
+    tester,
+  ) async {
+    await pasang(tester);
+
+    final pad = tester.getSize(find.byKey(const ValueKey('pad-0')));
+    expect(pad.width, greaterThanOrEqualTo(48));
+    expect(pad.width, lessThanOrEqualTo(72));
+    expect(tester.takeException(), isNull, reason: 'tanpa overflow');
+  });
+
   testWidgets('ketukan di atas pad = velocity tinggi, di bawah = rendah', (
     tester,
   ) async {
     final mesin = await pasang(tester);
-    final pad = tester.getRect(find.byKey(const ValueKey('pad-kick')));
+    final pad = tester.getRect(find.byKey(const ValueKey('pad-5')));
 
     await tester.tapAt(pad.topCenter + const Offset(0, 2));
     await tester.tapAt(pad.bottomCenter - const Offset(0, 2));
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(mesin.ketukan, hasLength(2));
-    expect(mesin.ketukan[0], closeTo(1.0, 0.02));
-    expect(mesin.ketukan[1], closeTo(0.4, 0.02));
+    expect(mesin.ketukan[0].$1, 5);
+    expect(mesin.ketukan[0].$2, closeTo(1.0, 0.03));
+    expect(mesin.ketukan[1].$2, closeTo(0.4, 0.03));
+    expect(mesin.lepasan, [5, 5]);
+  });
+
+  testWidgets('dua jari di dua pad: keduanya berbunyi, lepas masing-masing', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester);
+    final a = tester.getCenter(find.byKey(const ValueKey('pad-0')));
+    final b = tester.getCenter(find.byKey(const ValueKey('pad-15')));
+
+    final jari1 = await tester.startGesture(a, pointer: 1);
+    final jari2 = await tester.startGesture(b, pointer: 2);
+    expect(mesin.ketukan.map((k) => k.$1), [0, 15]);
+    expect(mesin.lepasan, isEmpty, reason: 'masih ditekan');
+
+    await jari2.up();
+    expect(mesin.lepasan, [15]);
+    await jari1.up();
+    expect(mesin.lepasan, [15, 0]);
+  });
+
+  testWidgets('LED menyala mengikuti pad yang berbunyi di mesin', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester);
+    Color warnaLed(int i) =>
+        ((tester.widget<AnimatedContainer>(find.byKey(ValueKey('led-$i'))))
+                    .decoration!
+                as BoxDecoration)
+            .color!;
+    final padam = warnaLed(2);
+
+    mesin.berbunyi = 1 << 2;
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(warnaLed(2), isNot(padam));
+    expect(warnaLed(3), padam);
+
+    mesin.berbunyi = 0;
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(warnaLed(2), padam);
   });
 
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (
@@ -117,7 +197,7 @@ void main() {
       const MxmDawApp(engine: EngineUnavailable('pustaka tidak ditemukan')),
     );
 
-    await tester.tap(find.byKey(const ValueKey('pad-kick')));
+    await tester.tap(find.byKey(const ValueKey('pad-0')), warnIfMissed: false);
     expect(find.text('AUDIO TIDAK TERSEDIA'), findsOneWidget);
     expect(find.text('MESIN TIDAK TERMUAT'), findsOneWidget);
   });

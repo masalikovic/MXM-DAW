@@ -23,12 +23,24 @@ Future<void> audioStart() => RustLib.instance.api.crateApiAudioStart();
 /// Hentikan stream audio dan bebaskan mesin (mis. saat aplikasi ke latar).
 Future<void> audioStop() => RustLib.instance.api.crateApiAudioStop();
 
-/// Pad ditekan dengan kekuatan 0..=1. `false` bila mesin belum berjalan.
+/// Pad `pad` (0..16) ditekan dengan kekuatan 0..=1. `false` bila mesin belum
+/// berjalan atau nomor pad salah.
 ///
 /// `sync`: dipanggil langsung dari event sentuh, hanya memasukkan event ke
 /// antrean (mikrodetik), tanpa menunggu thread audio (rencana §7).
-bool padHit({required double velocity}) =>
-    RustLib.instance.api.crateApiPadHit(velocity: velocity);
+bool padHit({required int pad, required double velocity}) =>
+    RustLib.instance.api.crateApiPadHit(pad: pad, velocity: velocity);
+
+/// Pad `pad` dilepas (penting untuk mode gate dan loop).
+bool padRelease({required int pad}) =>
+    RustLib.instance.api.crateApiPadRelease(pad: pad);
+
+/// Bit ke-`n` menyala bila pad `n` sedang berbunyi; untuk LED pad. Murah
+/// (satu baca atomik), jadi aman dipanggil 30 kali per detik.
+int padsSounding() => RustLib.instance.api.crateApiPadsSounding();
+
+/// Nama suara ke-16 pad, mis. `"KICK"`.
+List<String> padNames() => RustLib.instance.api.crateApiPadNames();
 
 /// Angka kesehatan mesin saat ini.
 AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
