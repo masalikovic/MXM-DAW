@@ -63,6 +63,7 @@ folder `app/` lalu commit hasilnya; CI gagal bila hasilnya basi:
 
 ```text
 cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
+cargo install cargo-expand --version 1.0.127 --locked
 cd app && flutter_rust_bridge_codegen generate
 ```
 

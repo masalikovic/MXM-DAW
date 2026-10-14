@@ -40,7 +40,7 @@ jobs:
       - name: Pasang toolchain dari rust-toolchain.toml
         run: rustup toolchain install && rustup show active-toolchain
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -91,7 +91,7 @@ jobs:
         working-directory: engine
         run: rustup toolchain install && rustup show active-toolchain
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -116,12 +116,14 @@ jobs:
       - name: Dependensi (pubspec.lock)
         run: flutter pub get --enforce-lockfile
 
-      # Harus sama dengan flutter_rust_bridge di engine/Cargo.toml dan
-      # app/pubspec.yaml (ADR-0004).
-      - name: Pasang flutter_rust_bridge_codegen
+      # flutter_rust_bridge_codegen harus sama dengan flutter_rust_bridge di
+      # engine/Cargo.toml dan app/pubspec.yaml (ADR-0004). Generator memakai
+      # cargo-expand; bila tidak ada, ia memasang versi terbaru sendiri dari
+      # internet. Versinya dikunci di sini supaya hasil CI bisa diulang.
+      - name: Pasang flutter_rust_bridge_codegen dan cargo-expand
         uses: taiki-e/install-action@v2
         with:
-          tool: flutter_rust_bridge_codegen@2.13.0
+          tool: flutter_rust_bridge_codegen@2.13.0,cargo-expand@1.0.127
 
       # Generator dijalankan ulang; hasilnya harus sama persis dengan yang
       # di-commit. Bila berbeda, seseorang mengubah api.rs tanpa menjalankan
