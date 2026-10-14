@@ -13,6 +13,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Harus sama persis dengan crate flutter_rust_bridge di engine/Cargo.toml
+  # (ADR-0004).
+  flutter_rust_bridge: 2.13.0
 
 dev_dependencies:
   flutter_test:
