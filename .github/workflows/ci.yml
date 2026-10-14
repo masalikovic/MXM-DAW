@@ -3,7 +3,7 @@
 # Job ditambahkan per langkah M0:
 #   engine   Rust: fmt, clippy pedantic, test, CLI, cargo-deny   (M0 langkah 2)
 #   app      Flutter: codegen FRB, format, analyze, test           (M0 langkah 3, 5)
-#   android  cargo-ndk → CMake → APK, cek manifest & ukuran       (langkah 6)
+#   android  cargo-ndk → CMake → APK rilis, cek izin/ABI/ukuran   (M0 langkah 6)
 #   preview  APK pratinjau bertanda tangan di Releases            (langkah 7)
 name: CI
 
@@ -70,7 +70,7 @@ jobs:
         run: cargo deny --locked check
 
   app:
-    name: Flutter · codegen, format, analyze, test, APK debug
+    name: Flutter · codegen, format, analyze, test
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     defaults:
@@ -78,12 +78,6 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v5
-
-      # Android Gradle Plugin 9 butuh JDK 17 atau lebih baru.
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
 
       # Rust dibutuhkan untuk generator flutter_rust_bridge dan untuk
       # membangun pustaka daw-ffi yang dimuat tes Dart (ADR-0004).
@@ -153,8 +147,78 @@ jobs:
       - name: Tes (widget + jembatan Rust)
         run: flutter test
 
-      # Pustaka Rust belum masuk APK (itu langkah 6). Build debug ini hanya
-      # membuktikan bahwa konfigurasi Android tetap valid.
-      # Runner GitHub sudah membawa Android SDK, jadi tidak perlu dipasang.
-      - name: Build APK debug (cek konfigurasi Android)
-        run: flutter build apk --debug --target-platform android-arm64
+  # APK lengkap: Rust (cargo-ndk) + C++ (CMake) → libmxm_engine.so → APK
+  # (ADR-0003). APK diperiksa tools/cek-apk.sh lalu diunggah sebagai artefak.
+  # Runner GitHub sudah membawa Android SDK; NDK dipasang sesuai build.gradle.kts.
+  android:
+    name: Android · cargo-ndk, CMake, APK rilis, cek izin/ABI/ukuran
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      # Android Gradle Plugin 9 butuh JDK 17 atau lebih baru.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Juga memasang target aarch64-linux-android dari rust-toolchain.toml.
+      - name: Pasang toolchain Rust dari rust-toolchain.toml
+        working-directory: engine
+        run: rustup toolchain install && rustup show active-toolchain
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/target
+          key: cargo-android-${{ runner.os }}-${{ hashFiles('engine/rust-toolchain.toml', 'engine/Cargo.lock') }}
+
+      - name: Pasang Flutter dari pubspec.yaml
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: app/pubspec.yaml
+          cache: true
+
+      - name: Dependensi (pubspec.lock)
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+
+      - name: Pasang cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@4.1.2
+
+      # cargo-ndk dan Gradle harus memakai NDK yang sama. Versinya dibaca dari
+      # ndkVersion di app/android/app/build.gradle.kts (satu sumber).
+      - name: Pasang Android NDK sesuai build.gradle.kts
+        run: |
+          ndk=$(sed -n 's/^ *ndkVersion = "\(.*\)"/\1/p' app/android/app/build.gradle.kts)
+          test -n "$ndk"
+          echo "NDK $ndk"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >>"$GITHUB_ENV"
+
+      # Pemeriksa APK dites dulu dengan APK tiruan: pemeriksa yang tidak
+      # pernah gagal tidak membuktikan apa-apa.
+      - name: Tes pemeriksa APK (tools/tes-cek-apk.sh)
+        run: tools/tes-cek-apk.sh
+
+      - name: Build APK rilis arm64-v8a (tools/build-android.sh)
+        run: tools/build-android.sh
+
+      - name: Periksa APK (izin, libmxm_engine.so, ABI, ekspor Rust, ukuran)
+        run: tools/cek-apk.sh app/build/app/outputs/flutter-apk/app-release.apk
+
+      # Sementara masih ditandatangani kunci debug; APK untuk dipasang di HP
+      # pemilik (kunci pratinjau tetap) terbit di M0 langkah 7.
+      - name: Unggah APK sebagai artefak
+        uses: actions/upload-artifact@v6
+        with:
+          name: mxm-daw-${{ github.sha }}-arm64-v8a
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+          if-no-files-found: error

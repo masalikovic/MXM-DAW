@@ -9,10 +9,11 @@ repository.workspace = true
 publish.workspace = true
 
 [lib]
-# cdylib: pustaka bersama untuk tes Flutter di host (Linux) di M0 langkah 5.
+# cdylib: pustaka bersama untuk tes Flutter di host (Linux).
+# staticlib: untuk Android; CMake menggabungkannya dengan adapter C++ menjadi
+#   satu libmxm_engine.so (ADR-0003).
 # lib: supaya `cargo test` dan clippy bisa memeriksa crate ini seperti biasa.
-# staticlib untuk Android (ADR-0003) ditambahkan di M0 langkah 6.
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
 daw-core.workspace = true

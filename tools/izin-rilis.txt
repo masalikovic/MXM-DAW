@@ -1,0 +1,6 @@
+# Izin Android yang boleh ada di APK pratinjau/rilis (ADR-0006).
+# Satu nama per baris. tools/cek-apk.sh gagal bila APK meminta izin lain.
+# Menambah baris di sini berarti mengubah janji privasi: lakukan lewat PR
+# dengan alasan yang jelas. INTERNET tidak pernah boleh ada di sini.
+#
+# Saat ini kosong: MXM-DAW tidak meminta izin apa pun.

@@ -67,6 +67,24 @@ cargo install cargo-expand --version 1.0.127 --locked
 cd app && flutter_rust_bridge_codegen generate
 ```
 
+## APK Android
+
+Satu pustaka native per ABI, `libmxm_engine.so`, berisi Rust (staticlib dari
+cargo-ndk) + adapter C++ (CMake), lihat ADR-0003. Hanya arm64-v8a
+(ADR-0009). Butuh Android SDK + NDK (versi di `app/android/app/build.gradle.kts`)
+dan `cargo install cargo-ndk --version 4.1.2 --locked`.
+
+```text
+tools/build-android.sh                     # Rust → CMake → app-release.apk
+tools/cek-apk.sh app/build/app/outputs/flutter-apk/app-release.apk
+tools/tes-cek-apk.sh                       # tes untuk pemeriksa APK itu sendiri
+```
+
+`cek-apk.sh` gagal bila APK meminta izin di luar `tools/izin-rilis.txt`
+(termasuk `INTERNET`, ADR-0006), tidak berisi `libmxm_engine.so`, berisi ABI
+lain, tidak mengekspor fungsi yang dicari Dart, atau lebih besar dari 25 MB.
+CI menjalankan semuanya dan mengunggah APK sebagai artefak.
+
 ## Memasang di HP
 
 Belum ada APK. APK pratinjau pertama terbit di akhir M0 lewat halaman
