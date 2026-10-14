@@ -96,15 +96,20 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     // Pad yang ditahan dilepas dulu, supaya mode gate/loop tidak terus berbunyi.
     audio.lepas(pad);
     unawaited(
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => HalamanSuara(
-            audio: audio,
-            pad: pad,
-            nama: pad < _nama.length ? _nama[pad] : '',
-          ),
-        ),
-      ),
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => HalamanSuara(
+                audio: audio,
+                pad: pad,
+                nama: pad < _nama.length ? _nama[pad] : '',
+              ),
+            ),
+          )
+          // Nama pad bisa berubah setelah impor.
+          .then((_) {
+            if (mounted) setState(() => _nama = audio.namaPad());
+          }),
     );
   }
 

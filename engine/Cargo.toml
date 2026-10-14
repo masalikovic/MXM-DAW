@@ -1,14 +1,16 @@
 # Workspace Rust mesin MXM-DAW (rencana §8.3).
 #
 #   daw-render ──▶ daw-core ◀── daw-ffi ◀── Flutter (app/)
+#                     ▲            │
+#                     └── daw-io ◀─┘
 #
 # daw-core: model, sequencer, voices, DSP, FX. Tanpa I/O (ADR-0001, ADR-0002).
 # daw-render: CLI untuk merender proyek/kit ke WAV, golden test, benchmark.
 # daw-ffi: API untuk Flutter lewat flutter_rust_bridge (ADR-0004).
-# Crate daw-io ditambahkan saat dibutuhkan.
+# daw-io: membaca sampel (WAV) dari byte; tanpa akses sistem berkas.
 [workspace]
 resolver = "3"
-members = ["crates/daw-core", "crates/daw-ffi", "crates/daw-render"]
+members = ["crates/daw-core", "crates/daw-ffi", "crates/daw-io", "crates/daw-render"]
 
 # Nilai bersama; tiap crate mewarisinya dengan `xxx.workspace = true`.
 [workspace.package]
@@ -21,6 +23,7 @@ publish = false
 
 [workspace.dependencies]
 daw-core = { path = "crates/daw-core" }
+daw-io = { path = "crates/daw-io" }
 # Versi dikunci persis (`=`): crate Rust, paket Dart `flutter_rust_bridge`
 # di app/pubspec.yaml, dan alat flutter_rust_bridge_codegen di CI harus
 # memakai versi yang sama (ADR-0004). Ubah ketiganya bersamaan.

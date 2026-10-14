@@ -112,8 +112,6 @@ pub(crate) fn atur_pad(pad: usize, params: &PadParams) -> bool {
 }
 
 /// Ganti sampel pad.
-// Dipakai impor WAV di langkah 4; sementara ini hanya oleh tes.
-#[allow(dead_code)]
 pub(crate) fn atur_sampel(pad: usize, nama: &str, sampel: Sampel) -> bool {
     let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(ui) = ui.as_mut() {
@@ -262,6 +260,26 @@ mod tests {
         nama_pad, pad_berbunyi, pasang_mesin, statistik,
     };
 
+    /// 0,1 detik sinus 441 Hz, 44,1 kHz mono 16-bit.
+    fn wav_pendek() -> Vec<u8> {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let spek = hound::WavSpec {
+            channels: 1,
+            sample_rate: 44_100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::new(&mut buf, spek).unwrap();
+        for i in 0..4_410 {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+            let v =
+                ((i as f32 * 441.0 / 44_100.0 * core::f32::consts::TAU).sin() * 20_000.0) as i16;
+            w.write_sample(v).unwrap();
+        }
+        w.finalize().unwrap();
+        buf.into_inner()
+    }
+
     fn render(frames: usize) -> Vec<f32> {
         let mut buf = vec![1.0_f32; frames * 2];
         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
@@ -309,6 +327,18 @@ mod tests {
         pasang_mesin();
         assert_eq!(nama_pad()[4], "BARU");
         assert!((baca(|b| b.params(3).unwrap().pitch) - 5.0).abs() < f32::EPSILON);
+
+        // Impor WAV lewat API Dart: nama dari berkas, end = panjang sampel.
+        let p = crate::api::pad_import_wav(7, "Vokal Saya.wav".to_owned(), wav_pendek()).unwrap();
+        assert_eq!((p.start, p.end), (0, 4_410));
+        assert_eq!(nama_pad()[7], "VOKAL-SA");
+        assert!(crate::api::pad_import_wav(7, "x.wav".to_owned(), vec![1, 2, 3]).is_err());
+        assert!(crate::api::pad_import_wav(16, "x.wav".to_owned(), wav_pendek()).is_err());
+        assert!(ketuk(7, 1.0));
+        assert!(
+            render(512).iter().any(|v| v.abs() > 0.1),
+            "sampel impor berbunyi"
+        );
         lepas_mesin();
     }
 }

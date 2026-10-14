@@ -41,8 +41,25 @@ class MesinPalsu implements MesinAudio {
   @override
   int padBerbunyi() => berbunyi;
 
+  final nama = [for (var i = 1; i <= 16; i++) 'SUARA$i'];
+
   @override
-  List<String> namaPad() => [for (var i = 1; i <= 16; i++) 'SUARA$i'];
+  List<String> namaPad() => List.of(nama);
+
+  final impor = <(int, String, int)>[];
+  String? galatImpor;
+
+  @override
+  Future<PadSettings> imporWav(
+    int pad,
+    String namaBerkas,
+    Uint8List isi,
+  ) async {
+    if (galatImpor != null) throw galatImpor!;
+    impor.add((pad, namaBerkas, isi.length));
+    nama[pad] = namaBerkas.toUpperCase().split('.').first;
+    return pengaturanPad[pad] = pengaturanBawaan.salin(end: isi.length);
+  }
 
   final pengaturanPad = List.filled(16, pengaturanBawaan);
   final perubahan = <(int, PadSettings)>[];

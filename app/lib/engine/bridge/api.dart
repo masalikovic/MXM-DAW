@@ -64,6 +64,25 @@ PadSettings? setPadSettings({
 Float32List padPeaks({required int pad, required int points}) =>
     RustLib.instance.api.crateApiPadPeaks(pad: pad, points: points);
 
+/// Impor WAV ke pad `pad`. `file_name` dipakai untuk nama pad (huruf besar,
+/// maksimal 8 karakter). Byte dibaca Kotlin lewat Storage Access Framework,
+/// jadi aplikasi tidak butuh izin penyimpanan.
+///
+/// Tidak `sync`: membaca WAV besar bisa memakan puluhan milidetik, jadi
+/// dijalankan di thread pekerja, bukan thread UI.
+///
+/// # Errors
+/// Pesan yang bisa ditampilkan ke pengguna bila WAV tidak bisa dibaca.
+Future<PadSettings> padImportWav({
+  required int pad,
+  required String fileName,
+  required List<int> bytes,
+}) => RustLib.instance.api.crateApiPadImportWav(
+  pad: pad,
+  fileName: fileName,
+  bytes: bytes,
+);
+
 /// Angka kesehatan mesin saat ini.
 AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
 
