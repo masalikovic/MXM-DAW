@@ -44,6 +44,18 @@ cargo clippy --all-targets -- -D warnings
 cargo deny check                    # lisensi & keamanan dependensi (perlu cargo-deny)
 ```
 
+## Aplikasi (Flutter)
+
+Aplikasi ada di folder `app/`. Versi Flutter dikunci di `app/pubspec.yaml`
+(`environment.flutter`, saat ini 3.47.7).
+
+```text
+cd app
+flutter pub get --enforce-lockfile
+flutter analyze --fatal-infos
+flutter test
+```
+
 ## Memasang di HP
 
 Belum ada APK. APK pratinjau pertama terbit di akhir M0 lewat halaman

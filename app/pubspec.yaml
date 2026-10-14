@@ -1,0 +1,23 @@
+name: mxmdaw
+description: "Sampler-composer genggam untuk Android"
+publish_to: 'none'
+version: 0.1.0+1
+
+# Versi Flutter dikunci persis. CI membaca baris `flutter:` di bawah ini
+# (subosito/flutter-action, flutter-version-file), jadi CI, sesi agen, dan
+# laptop pemilik memakai Flutter yang sama.
+environment:
+  sdk: ^3.13.5
+  flutter: 3.47.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

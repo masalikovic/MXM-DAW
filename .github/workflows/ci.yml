@@ -2,7 +2,7 @@
 #
 # Saat ini baru ada job `engine`. Job berikutnya ditambahkan per langkah:
 #   engine   Rust: fmt, clippy pedantic, test, CLI, cargo-deny   (M0 langkah 2)
-#   app      Flutter: format, analyze, test                       (langkah 3)
+#   app      Flutter: format, analyze, test                       (M0 langkah 3)
 #   android  cargo-ndk → CMake → APK, cek manifest & ukuran       (langkah 6)
 #   preview  APK pratinjau bertanda tangan di Releases            (langkah 7)
 name: CI
@@ -68,3 +68,51 @@ jobs:
 
       - name: Cek dependensi (cargo-deny)
         run: cargo deny --locked check
+
+  app:
+    name: Flutter · format, analyze, test, APK debug
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      # Android Gradle Plugin 9 butuh JDK 17 atau lebih baru.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Versi Flutter dibaca dari `environment.flutter` di app/pubspec.yaml,
+      # jadi hanya ada satu tempat untuk mengubahnya.
+      - name: Pasang Flutter dari pubspec.yaml
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: app/pubspec.yaml
+          cache: true
+
+      - name: Versi Flutter
+        run: flutter --version
+
+      # --enforce-lockfile: gagal bila pubspec.lock tidak cocok, bukan diam-diam
+      # memperbaruinya (versi dependensi dikunci, rencana §8.5).
+      - name: Dependensi (pubspec.lock)
+        run: flutter pub get --enforce-lockfile
+
+      - name: Format (dart format)
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analisis (temuan sekecil apa pun = gagal)
+        run: flutter analyze --fatal-infos
+
+      - name: Tes widget
+        run: flutter test
+
+      # Belum ada Rust di APK (itu langkah 6). Build debug ini hanya membuktikan
+      # bahwa konfigurasi Android (minSdk, manifest, ikon adaptif) valid.
+      # Runner GitHub sudah membawa Android SDK, jadi tidak perlu dipasang.
+      - name: Build APK debug (cek konfigurasi Android)
+        run: flutter build apk --debug --target-platform android-arm64
