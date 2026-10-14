@@ -39,6 +39,7 @@ ADR 0001–0008 berasal dari tabel keputusan inti di
 | [0010](0010-lisensi-dan-aset.md) | Lisensi kode, dependensi, dan aset | Diterima |
 | [0011](0011-token-warna-dan-kontras.md) | Token warna, warna grup C/D, dan tes kontras | Diterima |
 | [0012](0012-saluran-dan-kunci-pratinjau.md) | Saluran pratinjau/rilis dan kunci tanda tangan pratinjau | Diterima |
+| [0013](0013-mesin-real-time.md) | Bentuk mesin real-time: antrean bebas-lock, render tanpa alokasi | Diterima |
 
 ## Template
 

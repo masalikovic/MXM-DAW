@@ -25,6 +25,12 @@ daw-core = { path = "crates/daw-core" }
 # di app/pubspec.yaml, dan alat flutter_rust_bridge_codegen di CI harus
 # memakai versi yang sama (ADR-0004). Ubah ketiganya bersamaan.
 flutter_rust_bridge = "=2.13.0"
+# Antrean SPSC bebas-lock UI → thread audio (rencana §8.5).
+rtrb = "0.4.0"
+# Tes: alokasi di jalur render = tes gagal (rencana §12).
+assert_no_alloc = "1.1.2"
+# Menulis WAV dari CLI daw-render.
+hound = "3.5.1"
 
 # Lint bersama. `warn` di sini menjadi error di CI karena clippy dijalankan
 # dengan `-D warnings` (rencana §13.2).
