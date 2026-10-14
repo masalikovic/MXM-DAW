@@ -4,8 +4,8 @@
 #                                             ├─▶ libmxm_engine.so ─▶ APK
 #   mxm_engine_adapter.cpp (C++)             ─┘
 #
-# Rust dibangun lebih dulu oleh tools/build-android.sh. Di M1, adapter C++
-# ini membuka stream audio Oboe dan memanggil fungsi render Rust.
+# Rust dibangun lebih dulu oleh tools/build-android.sh. Adapter C++ membuka
+# stream audio Oboe dan memanggil fungsi render Rust (mxm_engine_render).
 cmake_minimum_required(VERSION 3.22)
 project(mxm_engine LANGUAGES CXX)
 
@@ -29,6 +29,10 @@ endif()
 add_library(daw_ffi STATIC IMPORTED)
 set_target_properties(daw_ffi PROPERTIES IMPORTED_LOCATION "${RUST_LIB}")
 
+# Oboe (Apache-2.0) dari paket Maven com.google.oboe:oboe lewat Prefab
+# (app/android/app/build.gradle.kts).
+find_package(oboe REQUIRED CONFIG)
+
 add_library(mxm_engine SHARED mxm_engine_adapter.cpp)
 
 # --whole-archive: tanpa ini linker membuang semua fungsi Rust yang tidak
@@ -37,6 +41,7 @@ add_library(mxm_engine SHARED mxm_engine_adapter.cpp)
 target_link_libraries(mxm_engine
   PRIVATE
     "-Wl,--whole-archive" daw_ffi "-Wl,--no-whole-archive"
+    oboe::oboe
     # Dibutuhkan pustaka standar Rust dan android_logger.
     log dl m
 )

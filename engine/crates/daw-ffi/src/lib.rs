@@ -5,6 +5,7 @@
 //! dan tidak boleh diedit tangan; CI memeriksa bahwa hasilnya tidak basi.
 
 pub mod api;
+mod audio;
 
 // Kode hasil generator tidak mengikuti lint proyek kita.
 #[allow(
