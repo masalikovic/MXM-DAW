@@ -100,7 +100,10 @@ class _HalamanPolaState extends State<HalamanPola> {
     );
     return Scaffold(
       appBar: AppBar(
-        title: Text('POLA A  ·  ${_seq.bars} BAR'),
+        title: Text(
+          '${_seq.bars} BAR  ·  PAD ${_pad + 1} '
+          '${_pad < widget.nama.length ? widget.nama[_pad] : ''}',
+        ),
         actions: [
           IconButton(
             key: const ValueKey('pola-main'),

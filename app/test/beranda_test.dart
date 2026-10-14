@@ -392,7 +392,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('grid')));
     await tester.pumpAndSettle();
 
-    expect(find.text('POLA A  ·  1 BAR'), findsOneWidget);
+    expect(find.text('1 BAR  ·  PAD 10 SUARA10'), findsOneWidget);
     final chip = tester.widget<ChoiceChip>(
       find.byKey(const ValueKey('pilih-pad-9')),
     );
