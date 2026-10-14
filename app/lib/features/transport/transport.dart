@@ -79,6 +79,7 @@ class PanelTransport extends StatelessWidget {
     required this.onSeq,
     required this.onTap,
     required this.onHapus,
+    required this.onGrid,
     super.key,
   });
 
@@ -94,6 +95,9 @@ class PanelTransport extends StatelessWidget {
   final ValueChanged<SeqConfig Function(SeqConfig)> onSeq;
   final VoidCallback onTap;
   final VoidCallback onHapus;
+
+  /// Buka halaman Pola (grid langkah, swing, kuantisasi).
+  final VoidCallback onGrid;
 
   /// Pilihan panjang pola.
   static const pilihanBar = [1, 2, 4, 8, 16];
@@ -157,6 +161,11 @@ class PanelTransport extends StatelessWidget {
                       (s) => s.salin(countInBars: (s.countInBars + 1) % 3),
                     )
                   : null,
+            ),
+            _Tombol(
+              kunci: 'grid',
+              label: 'GRID',
+              onTekan: aktif ? onGrid : null,
             ),
             _Tombol(
               kunci: 'rekam',
