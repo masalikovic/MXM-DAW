@@ -1,21 +1,33 @@
 //! Mesin real-time: menerima event dari UI lewat antrean bebas-lock dan
-//! mengisi buffer audio (ADR-0013, ADR-0014).
+//! mengisi buffer audio (ADR-0013, ADR-0014, ADR-0015).
 //!
 //! Pembagian peran:
-//! - [`EventSender`] dipegang thread UI (lewat FFI). Ia juga memegang salinan
-//!   parameter semua pad, jadi UI bisa membacanya tanpa bertanya ke thread
-//!   audio (ADR-0002: model ada di Rust).
+//! - [`EventSender`] dipegang thread UI (lewat FFI). Ia memegang **model**:
+//!   parameter dan sampel 16 pad, serta pola dan pengaturan sequencer. UI
+//!   membacanya tanpa bertanya ke thread audio (ADR-0002).
 //! - [`Engine`] dipegang thread audio. [`Engine::render`] tidak mengalokasi,
 //!   tidak mengunci, tidak melakukan I/O, dan **tidak membebaskan** memori
 //!   (rencana §8.4); tes `tests/tanpa_alokasi.rs` memaksakan aturan ini.
+//!
+//! Ada tiga antrean SPSC: event (UI → audio), sampah (audio → UI, untuk
+//! sampel/pola lama yang harus dibebaskan di UI), dan rekaman (audio → UI,
+//! ketukan yang direkam beserta posisinya).
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 use crate::bank::PadBank;
 use crate::pad::{PAD_COUNT, PadParams};
 use crate::sampel::Sampel;
+use crate::seq::{
+    Action, CompiledPattern, Note, PPQN, Pattern, STEP_TICKS, SeqSettings, Sequence, TICKS_PER_BAR,
+    compile,
+};
 use crate::suara::Suara;
+
+mod transport;
+
+use transport::{Klik, Transport};
 
 /// Polifoni (rencana §9).
 pub const MAX_VOICES: usize = 32;
@@ -25,6 +37,25 @@ pub const EVENT_CAPACITY: usize = 256;
 const HEADROOM: f32 = 0.8;
 /// Mesin memproses paling banyak sekian frame sekaligus (buffer campur tetap).
 const BLOK: usize = 256;
+/// Aksi terjadwal paling banyak per blok. Kelebihannya dimainkan di akhir
+/// blok (tidak hilang), tetapi itu hanya terjadi pada pola yang tidak wajar.
+const MAKS_JADWAL: usize = 128;
+
+/// Perintah transport.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportCommand {
+    /// Mulai dari awal pola. Bila `record`, count-in dimainkan dulu.
+    Play {
+        /// Rekam ketukan pad.
+        record: bool,
+        /// Bar count-in (0..=2) sebelum rekaman dimulai.
+        count_in_bars: u8,
+    },
+    /// Berhenti; semua pad gate/loop dilepas.
+    Stop,
+    /// Hidupkan/matikan rekaman tanpa menghentikan pemutaran (overdub).
+    Record(bool),
+}
 
 /// Event dari UI ke thread audio.
 #[derive(Clone, Debug)]
@@ -55,6 +86,44 @@ pub enum Event {
         /// Sampel baru.
         sample: Arc<Sampel>,
     },
+    /// Pola diganti. Pola lama dikembalikan ke UI untuk dibebaskan.
+    SetPattern(Arc<CompiledPattern>),
+    /// Transport.
+    Transport(TransportCommand),
+    /// Tempo (BPM, sudah disanitasi).
+    SetTempo(f32),
+    /// Metronom hidup/mati.
+    SetMetronome(bool),
+}
+
+/// Ketukan yang direkam thread audio, dengan posisi absolutnya.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Recorded {
+    /// Pad ditekan pada `tick` (sejak awal pemutaran, ≥ 0).
+    On {
+        /// Posisi.
+        tick: f64,
+        /// Nomor pad.
+        pad: u8,
+        /// Kekuatan.
+        velocity: f32,
+    },
+    /// Pad dilepas pada `tick`.
+    Off {
+        /// Posisi.
+        tick: f64,
+        /// Nomor pad.
+        pad: u8,
+    },
+}
+
+/// Memori yang harus dibebaskan di thread UI.
+enum Sampah {
+    // Isinya tidak pernah dibaca: cukup dibebaskan (drop) di thread UI.
+    #[allow(dead_code)]
+    Sampel(Arc<Sampel>),
+    #[allow(dead_code)]
+    Pola(Arc<CompiledPattern>),
 }
 
 /// Angka yang ditulis thread audio dan dibaca UI tanpa lock (atomik).
@@ -64,7 +133,12 @@ pub struct EngineStats {
     hits_played: AtomicU32,
     hits_dropped: AtomicU32,
     pads_sounding: AtomicU32,
+    posisi_tick: AtomicI64,
+    transport: AtomicU32,
 }
+
+const BIT_MAIN: u32 = 1;
+const BIT_REKAM: u32 = 2;
 
 impl EngineStats {
     /// Suara yang berbunyi di akhir blok terakhir.
@@ -90,14 +164,36 @@ impl EngineStats {
     pub fn pads_sounding(&self) -> u32 {
         self.pads_sounding.load(Ordering::Relaxed)
     }
+
+    /// Posisi transport (tick sejak awal; negatif saat count-in).
+    #[must_use]
+    pub fn position_ticks(&self) -> i64 {
+        self.posisi_tick.load(Ordering::Relaxed)
+    }
+
+    /// Transport sedang berjalan.
+    #[must_use]
+    pub fn playing(&self) -> bool {
+        self.transport.load(Ordering::Relaxed) & BIT_MAIN != 0
+    }
+
+    /// Sedang merekam.
+    #[must_use]
+    pub fn recording(&self) -> bool {
+        self.transport.load(Ordering::Relaxed) & BIT_REKAM != 0
+    }
 }
 
-/// Sisi UI: mengirim event ke thread audio dan memegang model pad.
+/// Sisi UI: mengirim event ke thread audio dan memegang model.
 pub struct EventSender {
     produsen: rtrb::Producer<Event>,
-    sampah: rtrb::Consumer<Arc<Sampel>>,
+    sampah: rtrb::Consumer<Sampah>,
+    rekaman: rtrb::Consumer<Recorded>,
     stats: Arc<EngineStats>,
     bank: PadBank,
+    seq: Sequence,
+    /// Not yang sedang direkam dan menunggu "lepas", per pad.
+    terbuka: [Option<usize>; PAD_COUNT],
 }
 
 impl EventSender {
@@ -189,15 +285,126 @@ impl EventSender {
         &self.bank
     }
 
-    /// Ambil model untuk disimpan saat mesin dibebaskan. Sampel lama yang
-    /// masih di antrean sampah ikut dibebaskan di sini (thread UI).
+    /// Model sequencer.
     #[must_use]
-    pub fn into_bank(mut self) -> PadBank {
-        self.empty_trash();
-        self.bank
+    pub fn sequence(&self) -> &Sequence {
+        &self.seq
     }
 
-    /// Bebaskan sampel lama yang dikembalikan thread audio. Dipanggil
+    /// Ganti pola (mis. dari grid langkah). Dikompilasi di sini, lalu dikirim.
+    pub fn set_pattern(&mut self, pattern: Pattern) -> bool {
+        self.seq.pattern = pattern;
+        self.terbuka = [None; PAD_COUNT];
+        self.kirim_pola()
+    }
+
+    /// Ganti tempo, swing, metronom, atau count-in.
+    pub fn set_settings(&mut self, settings: &SeqSettings) -> bool {
+        let baru = settings.sanitized();
+        let lama = self.seq.settings;
+        self.seq.settings = baru;
+        let mut ok = true;
+        if baru.bpm.to_bits() != lama.bpm.to_bits() {
+            ok &= self.kirim(Event::SetTempo(baru.bpm));
+        }
+        if baru.metronome != lama.metronome {
+            ok &= self.kirim(Event::SetMetronome(baru.metronome));
+        }
+        if baru.swing.to_bits() != lama.swing.to_bits() {
+            ok &= self.kirim_pola();
+        }
+        ok
+    }
+
+    /// Perintah transport. Count-in diambil dari pengaturan.
+    pub fn transport(&mut self, play: bool, record: bool) -> bool {
+        let perintah = if play {
+            TransportCommand::Play {
+                record,
+                count_in_bars: self.seq.settings.count_in_bars,
+            }
+        } else {
+            TransportCommand::Stop
+        };
+        self.terbuka = [None; PAD_COUNT];
+        self.kirim(Event::Transport(perintah))
+    }
+
+    /// Hidupkan/matikan rekaman sambil tetap bermain (overdub).
+    pub fn set_recording(&mut self, record: bool) -> bool {
+        self.kirim(Event::Transport(TransportCommand::Record(record)))
+    }
+
+    /// Ambil ketukan yang direkam thread audio dan masukkan ke pola.
+    ///
+    /// `kompensasi_ms` adalah latensi keluaran: pemain mengetuk mengikuti
+    /// bunyi yang **terdengar**, yang tertinggal sebanyak itu dari posisi
+    /// mesin, jadi posisi rekaman dimundurkan sebesar itu. Mengembalikan
+    /// jumlah not baru.
+    pub fn poll_recording(&mut self, kompensasi_ms: f64) -> usize {
+        let tick_per_ms = f64::from(self.seq.settings.bpm) * f64::from(PPQN) / 60_000.0;
+        let geser = kompensasi_ms.max(0.0) * tick_per_ms;
+        let panjang_u = self.seq.pattern.length_ticks();
+        let panjang = f64::from(panjang_u);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let ke_pola = |tick: f64| ((tick - geser).rem_euclid(panjang).round() as u32) % panjang_u;
+        let mut baru = 0;
+        let mut berubah = false;
+        while let Ok(r) = self.rekaman.pop() {
+            match r {
+                Recorded::On {
+                    tick,
+                    pad,
+                    velocity,
+                } => {
+                    let notes = &mut self.seq.pattern.notes;
+                    notes.push(Note {
+                        tick: ke_pola(tick),
+                        pad,
+                        velocity,
+                        length: STEP_TICKS,
+                    });
+                    self.terbuka[usize::from(pad)] = Some(notes.len() - 1);
+                    baru += 1;
+                    berubah = true;
+                }
+                Recorded::Off { tick, pad } => {
+                    if let Some(i) = self.terbuka[usize::from(pad)].take()
+                        && let Some(n) = self.seq.pattern.notes.get_mut(i)
+                    {
+                        let akhir = ke_pola(tick);
+                        n.length = ((akhir + panjang_u - n.tick) % panjang_u).max(1);
+                        berubah = true;
+                    }
+                }
+            }
+        }
+        if berubah {
+            self.kirim_pola();
+        }
+        baru
+    }
+
+    fn kirim_pola(&mut self) -> bool {
+        let pola = Arc::new(compile(&self.seq.pattern, self.seq.settings.swing));
+        self.kirim(Event::SetPattern(pola))
+    }
+
+    /// Ambil model untuk disimpan saat mesin dibebaskan. Memori lama yang
+    /// masih di antrean sampah ikut dibebaskan di sini (thread UI).
+    #[must_use]
+    pub fn into_model(mut self) -> (PadBank, Sequence) {
+        self.empty_trash();
+        (self.bank, self.seq)
+    }
+
+    /// Ambil model pad saja (lihat [`EventSender::into_model`]).
+    #[must_use]
+    pub fn into_bank(self) -> PadBank {
+        self.into_model().0
+    }
+
+    /// Bebaskan sampel/pola lama yang dikembalikan thread audio. Dipanggil
     /// otomatis setiap kali mengirim event.
     pub fn empty_trash(&mut self) -> usize {
         let mut n = 0;
@@ -214,13 +421,25 @@ impl EventSender {
     }
 }
 
+/// Satu aksi terjadwal di dalam blok.
+#[derive(Clone, Copy, Debug)]
+enum Jadwal {
+    Pola(Action),
+    Klik { awal_bar: bool },
+}
+
 /// Sisi thread audio: mengisi buffer.
 pub struct Engine {
     konsumen: rtrb::Consumer<Event>,
-    sampah: rtrb::Producer<Arc<Sampel>>,
+    sampah: rtrb::Producer<Sampah>,
+    rekaman: rtrb::Producer<Recorded>,
     suara: Box<[Suara; MAX_VOICES]>,
     pads: [PadParams; PAD_COUNT],
     sampel: [Option<Arc<Sampel>>; PAD_COUNT],
+    pola: Arc<CompiledPattern>,
+    transport: Transport,
+    klik: Klik,
+    jadwal: Box<[(u32, Jadwal); MAKS_JADWAL]>,
     sr: f32,
     campur: Box<[f32; BLOK * 2]>,
     stats: Arc<EngineStats>,
@@ -234,27 +453,41 @@ impl Engine {
         Self::with_bank(sample_rate, PadBank::factory())
     }
 
-    /// Mesin baru yang memainkan isi `bank` (mis. bank yang disimpan saat
-    /// aplikasi ke latar).
-    ///
-    /// Semua alokasi terjadi di sini, bukan di thread audio.
+    /// Mesin baru yang memainkan isi `bank` dengan sequencer kosong.
     #[must_use]
     pub fn with_bank(sample_rate: u32, bank: PadBank) -> (Self, EventSender) {
+        Self::with_model(sample_rate, bank, Sequence::default())
+    }
+
+    /// Mesin baru dari model yang disimpan (mis. saat aplikasi kembali dari
+    /// latar). Semua alokasi terjadi di sini, bukan di thread audio.
+    #[must_use]
+    pub fn with_model(sample_rate: u32, bank: PadBank, seq: Sequence) -> (Self, EventSender) {
         let (produsen, konsumen) = rtrb::RingBuffer::new(EVENT_CAPACITY);
-        // Setiap SetSample mengembalikan paling banyak satu sampel lama.
+        // Setiap SetSample/SetPattern mengembalikan paling banyak satu benda.
         let (sampah_tulis, sampah_baca) = rtrb::RingBuffer::new(EVENT_CAPACITY);
+        let (rekam_tulis, rekam_baca) = rtrb::RingBuffer::new(EVENT_CAPACITY);
         let stats = Arc::new(EngineStats::default());
         let pads = core::array::from_fn(|i| bank.params(i).copied().unwrap_or_default());
         let sampel = core::array::from_fn(|i| bank.sample(i).cloned());
+        let settings = seq.settings.sanitized();
+        let pola = Arc::new(compile(&seq.pattern, settings.swing));
         #[allow(clippy::cast_precision_loss)]
         let sr = sample_rate.max(1) as f32;
+        let mut transport = Transport::new(sr, settings.bpm);
+        transport.metronom = settings.metronome;
         (
             Self {
                 konsumen,
                 sampah: sampah_tulis,
+                rekaman: rekam_tulis,
                 suara: Box::new([Suara::default(); MAX_VOICES]),
                 pads,
                 sampel,
+                pola,
+                transport,
+                klik: Klik::default(),
+                jadwal: Box::new([(0, Jadwal::Klik { awal_bar: false }); MAKS_JADWAL]),
                 sr,
                 campur: Box::new([0.0; BLOK * 2]),
                 stats: Arc::clone(&stats),
@@ -262,8 +495,14 @@ impl Engine {
             EventSender {
                 produsen,
                 sampah: sampah_baca,
+                rekaman: rekam_baca,
                 stats,
                 bank,
+                seq: Sequence {
+                    pattern: seq.pattern,
+                    settings,
+                },
+                terbuka: [None; PAD_COUNT],
             },
         )
     }
@@ -276,8 +515,8 @@ impl Engine {
 
     /// Isi `out` (sampel interleaved, `channels` kanal) dengan audio.
     ///
-    /// Event yang tiba sebelum blok ini dimulai dibunyikan di awal blok.
-    /// Penempatan tepat-sampel datang bersama sequencer di M3.
+    /// Ketukan dari UI dibunyikan di awal blok. Not dari pola dan klik
+    /// metronom dibunyikan **tepat** pada sampelnya di dalam blok.
     pub fn render(&mut self, out: &mut [f32], channels: usize) {
         let channels = channels.max(1);
         while let Ok(event) = self.konsumen.pop() {
@@ -292,6 +531,108 @@ impl Engine {
             }
         }
 
+        let frames = out.len() / channels;
+        let n_jadwal = self.susun_jadwal(frames);
+        let mut awal = 0;
+        for j in 0..=n_jadwal {
+            let (offset, aksi) = if j < n_jadwal {
+                let (o, a) = self.jadwal[j];
+                (o as usize, Some(a))
+            } else {
+                (frames, None)
+            };
+            if offset > awal {
+                self.campur_ke(&mut out[awal * channels..offset * channels], channels);
+                awal = offset;
+            }
+            match aksi {
+                Some(Jadwal::Pola(Action::On { pad, velocity })) => {
+                    self.picu(usize::from(pad), velocity);
+                }
+                Some(Jadwal::Pola(Action::Off { pad })) => self.lepas(usize::from(pad)),
+                Some(Jadwal::Klik { awal_bar }) => self.klik.picu(awal_bar, self.sr),
+                None => {}
+            }
+        }
+        self.transport.maju(frames as u64);
+        self.tulis_statistik();
+    }
+
+    /// Isi `self.jadwal` dengan aksi pola dan klik yang jatuh di blok ini,
+    /// terurut menurut offset frame. Mengembalikan jumlahnya.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    fn susun_jadwal(&mut self, frames: usize) -> usize {
+        let t = &self.transport;
+        if !t.main || frames == 0 {
+            return 0;
+        }
+        let f0 = t.frame();
+        let f1 = f0 + frames as u64;
+        // Kandidat dicari di rentang tick yang sedikit lebih lebar; blok mana
+        // yang memainkannya diputuskan oleh **frame**-nya. Tanpa ini, event yang
+        // jatuh tepat di frame pertama blok berikutnya ikut blok ini dan
+        // berbunyi satu sampel terlalu cepat.
+        let lo = t.tick_di(f0) - t.tick_per_frame();
+        let hi = t.tick_di(f1) + t.tick_per_frame();
+        let mut n = 0;
+        let mut tambah = |tick: f64, aksi: Jadwal, jadwal: &mut [(u32, Jadwal)]| {
+            let f = t.frame_untuk(tick);
+            if (f0..f1).contains(&f) && n < MAKS_JADWAL {
+                jadwal[n] = ((f - f0) as u32, aksi);
+                n += 1;
+            }
+        };
+
+        // Klik metronom: saat merekam, termasuk count-in (tick negatif).
+        if t.metronom && t.rekam {
+            let ketuk = f64::from(PPQN);
+            let bar = f64::from(TICKS_PER_BAR);
+            let mut k = (lo / ketuk).ceil();
+            while k * ketuk < hi {
+                let awal_bar = ((k * ketuk) / bar).fract().abs() < 1e-9;
+                tambah(k * ketuk, Jadwal::Klik { awal_bar }, &mut self.jadwal[..]);
+                k += 1.0;
+            }
+        }
+
+        // Not pola: hanya setelah count-in (tick ≥ 0).
+        let pola = &self.pola;
+        let l = f64::from(pola.length_ticks.max(1));
+        let mulai = lo.max(0.0);
+        if hi > mulai && !pola.actions.is_empty() {
+            let mut putaran = (mulai / l).floor();
+            while putaran * l < hi {
+                let dasar = putaran * l;
+                let dari = pola.actions.partition_point(|a| dasar + a.tick < mulai);
+                for a in &pola.actions[dari..] {
+                    let tick = dasar + a.tick;
+                    if tick >= hi {
+                        break;
+                    }
+                    tambah(tick, Jadwal::Pola(a.action), &mut self.jadwal[..]);
+                }
+                putaran += 1.0;
+            }
+        }
+
+        // Urutkan menurut offset; insertion sort stabil, n kecil.
+        let jadwal = &mut self.jadwal[..n];
+        for i in 1..n {
+            let mut j = i;
+            while j > 0 && jadwal[j - 1].0 > jadwal[j].0 {
+                jadwal.swap(j - 1, j);
+                j -= 1;
+            }
+        }
+        n
+    }
+
+    /// Campur semua suara ke `out` (sepanjang `out.len() / channels` frame).
+    fn campur_ke(&mut self, out: &mut [f32], channels: usize) {
         for potongan in out.chunks_mut(BLOK * channels) {
             let frames = potongan.len() / channels;
             let campur = &mut self.campur[..frames * 2];
@@ -304,6 +645,11 @@ impl Engine {
                     Some(sampel) => s.tambah_ke(sampel, campur),
                     None => s.potong(),
                 }
+            }
+            for lr in campur.chunks_exact_mut(2) {
+                let k = self.klik.berikut();
+                lr[0] += k;
+                lr[1] += k;
             }
             for (frame, lr) in potongan
                 .chunks_exact_mut(channels)
@@ -322,7 +668,9 @@ impl Engine {
                 }
             }
         }
+    }
 
+    fn tulis_statistik(&self) {
         let mut aktif = 0;
         let mut bit = 0_u32;
         for s in self.suara.iter() {
@@ -333,33 +681,76 @@ impl Engine {
         }
         self.stats.voices_active.store(aktif, Ordering::Relaxed);
         self.stats.pads_sounding.store(bit, Ordering::Relaxed);
+        #[allow(clippy::cast_possible_truncation)]
+        let posisi = self.transport.tick().floor() as i64;
+        self.stats.posisi_tick.store(posisi, Ordering::Relaxed);
+        let mut status = 0;
+        if self.transport.main {
+            status |= BIT_MAIN;
+        }
+        if self.transport.rekam {
+            status |= BIT_REKAM;
+        }
+        self.stats.transport.store(status, Ordering::Relaxed);
+    }
+
+    /// Mainkan pad (dari ketukan UI atau dari pola).
+    fn picu(&mut self, pad: usize, velocity: f32) {
+        let Some(sampel) = &self.sampel[pad] else {
+            return;
+        };
+        let params = self.pads[pad];
+        if params.choke != 0 {
+            for s in self.suara.iter_mut() {
+                if s.aktif() && s.pad() != pad && self.pads[s.pad()].choke == params.choke {
+                    s.cekik();
+                }
+            }
+        }
+        let i = self.pilih_suara();
+        self.suara[i].picu(pad, velocity, &params, sampel, self.sr);
+        self.stats.hits_played.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn lepas(&mut self, pad: usize) {
+        for s in self.suara.iter_mut() {
+            if s.aktif() && s.pad() == pad {
+                s.lepas();
+            }
+        }
+    }
+
+    /// Kirim rekaman bila sedang merekam dan count-in sudah lewat.
+    fn rekam(&mut self, r: impl FnOnce(f64) -> Recorded) {
+        let tick = self.transport.tick();
+        if self.transport.main && self.transport.rekam && tick >= 0.0 {
+            // Antrean penuh: ketukan tetap berbunyi, hanya tidak direkam.
+            let _ = self.rekaman.push(r(tick));
+        }
+    }
+
+    fn buang(&mut self, sampah: Sampah) {
+        // Antrean sampah seukuran antrean event, jadi tidak pernah penuh
+        // selama UI terus mengirim. Bila tetap penuh, lebih baik bocor daripada
+        // membebaskan memori di thread audio.
+        if let Err(rtrb::PushError::Full(s)) = self.sampah.push(sampah) {
+            core::mem::forget(s);
+        }
     }
 
     fn terapkan(&mut self, event: Event) {
         match event {
             Event::Hit { pad, velocity } => {
-                let pad = usize::from(pad);
-                let Some(sampel) = &self.sampel[pad] else {
-                    return;
-                };
-                let params = self.pads[pad];
-                if params.choke != 0 {
-                    for s in self.suara.iter_mut() {
-                        if s.aktif() && s.pad() != pad && self.pads[s.pad()].choke == params.choke {
-                            s.cekik();
-                        }
-                    }
-                }
-                let i = self.pilih_suara();
-                self.suara[i].picu(pad, velocity, &params, sampel, self.sr);
-                self.stats.hits_played.fetch_add(1, Ordering::Relaxed);
+                self.picu(usize::from(pad), velocity);
+                self.rekam(|tick| Recorded::On {
+                    tick,
+                    pad,
+                    velocity,
+                });
             }
             Event::Release { pad } => {
-                for s in self.suara.iter_mut() {
-                    if s.aktif() && s.pad() == usize::from(pad) {
-                        s.lepas();
-                    }
-                }
+                self.lepas(usize::from(pad));
+                self.rekam(|tick| Recorded::Off { tick, pad });
             }
             Event::SetPad { pad, params } => self.pads[usize::from(pad)] = params,
             Event::SetSample { pad, sample } => {
@@ -370,14 +761,35 @@ impl Engine {
                     }
                 }
                 if let Some(lama) = self.sampel[pad].replace(sample) {
-                    // Antrean sampah seukuran antrean event, jadi tidak pernah
-                    // penuh selama UI terus mengirim. Bila tetap penuh, lebih
-                    // baik bocor daripada membebaskan memori di thread audio.
-                    if let Err(rtrb::PushError::Full(lama)) = self.sampah.push(lama) {
-                        core::mem::forget(lama);
-                    }
+                    self.buang(Sampah::Sampel(lama));
                 }
             }
+            Event::SetPattern(pola) => {
+                let lama = core::mem::replace(&mut self.pola, pola);
+                self.buang(Sampah::Pola(lama));
+            }
+            Event::Transport(TransportCommand::Play {
+                record,
+                count_in_bars,
+            }) => {
+                let count_in = if record {
+                    -f64::from(u32::from(count_in_bars.min(2)) * TICKS_PER_BAR)
+                } else {
+                    0.0
+                };
+                self.transport.mulai(count_in, record);
+            }
+            Event::Transport(TransportCommand::Stop) => {
+                self.transport.berhenti();
+                for pad in 0..PAD_COUNT {
+                    self.lepas(pad);
+                }
+            }
+            Event::Transport(TransportCommand::Record(rekam)) => {
+                self.transport.rekam = rekam && self.transport.main;
+            }
+            Event::SetTempo(bpm) => self.transport.atur_tempo(bpm),
+            Event::SetMetronome(nyala) => self.transport.metronom = nyala,
         }
     }
 
@@ -398,3 +810,5 @@ impl Engine {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_seq;

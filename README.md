@@ -41,6 +41,7 @@ cd engine
 cargo test                          # semua tes
 cargo run -p daw-render -- --version
 cargo run -p daw-render -- kit kit/          # dengarkan 16 suara kit pabrik (WAV)
+cargo run -p daw-render -- demo demo.wav      # beat demo 4 bar dari sequencer
 cargo clippy --all-targets -- -D warnings
 cargo deny check                    # lisensi & keamanan dependensi (perlu cargo-deny)
 ```

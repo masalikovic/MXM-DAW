@@ -15,6 +15,7 @@ use daw_core::bank::PadBank;
 use daw_core::engine::{Engine, EngineStats, EventSender};
 use daw_core::pad::PadParams;
 use daw_core::sampel::Sampel;
+use daw_core::seq::Sequence;
 
 /// Sample rate mesin; adapter meminta Oboe mengonversi bila perangkat berbeda.
 pub(crate) const SAMPLE_RATE: u32 = 48_000;
@@ -24,6 +25,8 @@ static SISI_UI: Mutex<Option<SisiUi>> = Mutex::new(None);
 /// Model 16 pad saat mesin tidak berjalan (mis. aplikasi di latar). Urutan
 /// kunci selalu `SISI_UI` lalu `BANK`.
 static BANK: Mutex<Option<PadBank>> = Mutex::new(None);
+/// Pola dan pengaturan sequencer saat mesin tidak berjalan.
+static SEKUENS: Mutex<Option<Sequence>> = Mutex::new(None);
 
 struct SisiUi {
     pengirim: EventSender,
@@ -59,12 +62,15 @@ pub unsafe extern "C" fn mxm_engine_render(out: *mut f32, frames: i32, channels:
 /// Buat mesin baru dan pasang untuk thread audio. Mengganti mesin lama.
 pub(crate) fn pasang_mesin() {
     let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
-    let bank = match ui.take() {
-        Some(lama) => lama.pengirim.into_bank(),
-        None => kunci_bank().take().unwrap_or_else(PadBank::factory),
+    let (bank, seq) = match ui.take() {
+        Some(lama) => lama.pengirim.into_model(),
+        None => (
+            kunci_bank().take().unwrap_or_else(PadBank::factory),
+            kunci_sekuens().take().unwrap_or_default(),
+        ),
     };
     drop(ui);
-    let (mesin, pengirim) = Engine::with_bank(SAMPLE_RATE, bank);
+    let (mesin, pengirim) = Engine::with_model(SAMPLE_RATE, bank, seq);
     let stats = Arc::clone(pengirim.stats());
     let lama = MESIN.swap(Box::into_raw(Box::new(mesin)), Ordering::AcqRel);
     *SISI_UI.lock().unwrap_or_else(PoisonError::into_inner) = Some(SisiUi { pengirim, stats });
@@ -80,13 +86,19 @@ pub(crate) fn lepas_mesin() {
         .unwrap_or_else(PoisonError::into_inner)
         .take();
     if let Some(ui) = ui {
-        *kunci_bank() = Some(ui.pengirim.into_bank());
+        let (bank, seq) = ui.pengirim.into_model();
+        *kunci_bank() = Some(bank);
+        *kunci_sekuens() = Some(seq);
     }
     bebaskan(lama);
 }
 
 fn kunci_bank() -> std::sync::MutexGuard<'static, Option<PadBank>> {
     BANK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn kunci_sekuens() -> std::sync::MutexGuard<'static, Option<Sequence>> {
+    SEKUENS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Baca model: dari mesin yang berjalan, atau dari bank yang disimpan.

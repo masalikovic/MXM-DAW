@@ -62,3 +62,14 @@ fn kit_menulis_16_wav_yang_bisa_dibaca_lagi() {
     );
     std::fs::remove_dir_all(folder).unwrap();
 }
+
+#[test]
+fn demo_menulis_wav_4_bar() {
+    let berkas = std::env::temp_dir().join("mxm-daw-tes-demo.wav");
+    let hasil = daw_render(&["demo", berkas.to_str().unwrap()]);
+    assert!(hasil.status.success(), "{hasil:?}");
+    let wav = hound::WavReader::open(&berkas).unwrap();
+    // 4 bar pada 96 BPM = 10 s, ditambah 1 s ekor.
+    assert_eq!(wav.duration(), 11 * 48_000);
+    std::fs::remove_file(berkas).unwrap();
+}
