@@ -41,11 +41,18 @@ android {
         externalNativeBuild {
             cmake {
                 abiFilters += "arm64-v8a"
+                // Oboe dari Prefab wajib memakai STL bersama (libc++_shared.so).
+                arguments += "-DANDROID_STL=c++_shared"
             }
         }
     }
 
-    // libmxm_engine.so = Rust (staticlib) + adapter C++ (ADR-0003).
+    // Prefab: CMake menemukan Oboe dari paket Maven (find_package).
+    buildFeatures {
+        prefab = true
+    }
+
+    // libmxm_engine.so = Rust (staticlib) + adapter C++ + Oboe (ADR-0003).
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -91,6 +98,11 @@ android {
                 ?: signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    // Oboe: stream audio rendah-latensi (ADR-0003). Apache-2.0.
+    implementation("com.google.oboe:oboe:1.10.0")
 }
 
 kotlin {

@@ -13,3 +13,123 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// `Future`. Aman karena fungsinya hanya membaca konstanta yang ditanam
 /// compiler (lihat `daw_core::engine_version`).
 String engineVersion() => RustLib.instance.api.crateApiEngineVersion();
+
+/// Mulai mesin dan stream audio. Aman dipanggil berulang.
+///
+/// # Errors
+/// Pesan galat bila stream tidak bisa dibuka (atau di luar Android).
+Future<void> audioStart() => RustLib.instance.api.crateApiAudioStart();
+
+/// Hentikan stream audio dan bebaskan mesin (mis. saat aplikasi ke latar).
+Future<void> audioStop() => RustLib.instance.api.crateApiAudioStop();
+
+/// Pad ditekan dengan kekuatan 0..=1. `false` bila mesin belum berjalan.
+///
+/// `sync`: dipanggil langsung dari event sentuh, hanya memasukkan event ke
+/// antrean (mikrodetik), tanpa menunggu thread audio (rencana §7).
+bool padHit({required double velocity}) =>
+    RustLib.instance.api.crateApiPadHit(velocity: velocity);
+
+/// Angka kesehatan mesin saat ini.
+AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
+
+/// Angka kesehatan mesin untuk panel di layar (rencana §6.3, §11).
+///
+/// Nilai −1 berarti "tidak diketahui" (mis. perangkat tidak melaporkannya).
+class AudioHealth {
+  /// Stream audio sedang berjalan.
+  final bool running;
+
+  /// Sample rate stream (Hz).
+  final int sampleRate;
+
+  /// Ukuran burst perangkat (frame).
+  final int framesPerBurst;
+
+  /// Ukuran buffer saat ini (frame); dinaikkan `LatencyTuner` bila underrun.
+  final int bufferSize;
+
+  /// Jumlah underrun sejak stream dibuka.
+  final int xruns;
+
+  /// Latensi keluaran yang dilaporkan Oboe (ms).
+  final double latencyMs;
+
+  /// Beban callback rata-rata (waktu render ÷ periode buffer).
+  final double loadAvg;
+
+  /// Beban callback tertinggi.
+  final double loadMax;
+
+  /// Mode eksklusif didapat (bukan jatuh ke shared).
+  final bool exclusive;
+
+  /// API yang dipakai adalah `AAudio` (bukan `OpenSL ES`).
+  final bool aaudio;
+
+  /// Berapa kali stream dibuka ulang (mis. headset dicabut).
+  final int restarts;
+
+  /// Suara yang sedang berbunyi.
+  final int voicesActive;
+
+  /// Ketukan yang sudah dimainkan.
+  final int hitsPlayed;
+
+  /// Ketukan yang dibuang karena antrean penuh.
+  final int hitsDropped;
+
+  const AudioHealth({
+    required this.running,
+    required this.sampleRate,
+    required this.framesPerBurst,
+    required this.bufferSize,
+    required this.xruns,
+    required this.latencyMs,
+    required this.loadAvg,
+    required this.loadMax,
+    required this.exclusive,
+    required this.aaudio,
+    required this.restarts,
+    required this.voicesActive,
+    required this.hitsPlayed,
+    required this.hitsDropped,
+  });
+
+  @override
+  int get hashCode =>
+      running.hashCode ^
+      sampleRate.hashCode ^
+      framesPerBurst.hashCode ^
+      bufferSize.hashCode ^
+      xruns.hashCode ^
+      latencyMs.hashCode ^
+      loadAvg.hashCode ^
+      loadMax.hashCode ^
+      exclusive.hashCode ^
+      aaudio.hashCode ^
+      restarts.hashCode ^
+      voicesActive.hashCode ^
+      hitsPlayed.hashCode ^
+      hitsDropped.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudioHealth &&
+          runtimeType == other.runtimeType &&
+          running == other.running &&
+          sampleRate == other.sampleRate &&
+          framesPerBurst == other.framesPerBurst &&
+          bufferSize == other.bufferSize &&
+          xruns == other.xruns &&
+          latencyMs == other.latencyMs &&
+          loadAvg == other.loadAvg &&
+          loadMax == other.loadMax &&
+          exclusive == other.exclusive &&
+          aaudio == other.aaudio &&
+          restarts == other.restarts &&
+          voicesActive == other.voicesActive &&
+          hitsPlayed == other.hitsPlayed &&
+          hitsDropped == other.hitsDropped;
+}
