@@ -1,0 +1,30 @@
+# Workspace Rust mesin MXM-DAW (rencana §8.3).
+#
+#   daw-render ──▶ daw-core
+#
+# daw-core: model, sequencer, voices, DSP, FX. Tanpa I/O (ADR-0001, ADR-0002).
+# daw-render: CLI untuk merender proyek/kit ke WAV, golden test, benchmark.
+# Crate daw-io dan daw-ffi ditambahkan saat dibutuhkan.
+[workspace]
+resolver = "3"
+members = ["crates/daw-core", "crates/daw-render"]
+
+# Nilai bersama; tiap crate mewarisinya dengan `xxx.workspace = true`.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/masalikovic/MXM-DAW"
+publish = false
+
+[workspace.dependencies]
+daw-core = { path = "crates/daw-core" }
+
+# Lint bersama. `warn` di sini menjadi error di CI karena clippy dijalankan
+# dengan `-D warnings` (rencana §13.2).
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
