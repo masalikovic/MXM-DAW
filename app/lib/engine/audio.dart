@@ -2,7 +2,15 @@ import 'dart:typed_data';
 
 import 'bridge/api.dart' as rust;
 
-export 'bridge/api.dart' show AudioHealth, FilterKind, PadSettings, PlayKind;
+export 'bridge/api.dart'
+    show
+        AudioHealth,
+        FilterKind,
+        NoteData,
+        PadSettings,
+        PlayKind,
+        SeqConfig,
+        TransportState;
 
 /// Kendali stream audio dan pad, dari sudut pandang UI.
 ///
@@ -45,6 +53,30 @@ abstract interface class MesinAudio {
 
   /// Impor WAV ke pad. Melempar pesan galat (teks) bila WAV tidak bisa dibaca.
   Future<rust.PadSettings> imporWav(int pad, String namaBerkas, Uint8List isi);
+
+  /// Mulai bermain dari awal pola; `rekam` = rekam ketukan (dengan count-in).
+  bool mainkan({required bool rekam});
+
+  /// Berhenti bermain.
+  bool hentikan();
+
+  /// Rekam hidup/mati sambil bermain (overdub).
+  bool aturRekam({required bool nyala});
+
+  /// Posisi transport; sekaligus memasukkan ketukan yang direkam ke pola.
+  rust.TransportState statusTransport();
+
+  /// Tempo, swing, metronom, count-in, panjang pola, kuantisasi.
+  rust.SeqConfig pengaturanSeq();
+
+  /// Simpan pengaturan; mengembalikan nilai yang benar-benar tersimpan.
+  rust.SeqConfig aturPengaturanSeq(rust.SeqConfig nilai);
+
+  /// Not pola (tick mentah).
+  List<rust.NoteData> notPola();
+
+  /// Ganti semua not pola.
+  bool aturNotPola(List<rust.NoteData> not);
 }
 
 /// Mesin sungguhan: Rust lewat flutter_rust_bridge, lalu Oboe (ADR-0003).
@@ -93,6 +125,52 @@ class MesinAudioRust implements MesinAudio {
     String namaBerkas,
     Uint8List isi,
   ) => rust.padImportWav(pad: pad, fileName: namaBerkas, bytes: isi);
+
+  @override
+  bool mainkan({required bool rekam}) => rust.transportPlay(record: rekam);
+
+  @override
+  bool hentikan() => rust.transportStop();
+
+  @override
+  bool aturRekam({required bool nyala}) => rust.transportRecord(enabled: nyala);
+
+  @override
+  rust.TransportState statusTransport() => rust.transportState();
+
+  @override
+  rust.SeqConfig pengaturanSeq() => rust.seqConfig();
+
+  @override
+  rust.SeqConfig aturPengaturanSeq(rust.SeqConfig nilai) =>
+      rust.setSeqConfig(config: nilai);
+
+  @override
+  List<rust.NoteData> notPola() => rust.patternNotes();
+
+  @override
+  bool aturNotPola(List<rust.NoteData> not) => rust.setPatternNotes(notes: not);
+}
+
+/// Salinan [rust.SeqConfig] dengan sebagian nilai diganti.
+extension SalinSeq on rust.SeqConfig {
+  rust.SeqConfig salin({
+    double? bpm,
+    double? swing,
+    bool? metronome,
+    int? countInBars,
+    int? bars,
+    int? quantizeGrid,
+    double? quantizeStrength,
+  }) => rust.SeqConfig(
+    bpm: bpm ?? this.bpm,
+    swing: swing ?? this.swing,
+    metronome: metronome ?? this.metronome,
+    countInBars: countInBars ?? this.countInBars,
+    bars: bars ?? this.bars,
+    quantizeGrid: quantizeGrid ?? this.quantizeGrid,
+    quantizeStrength: quantizeStrength ?? this.quantizeStrength,
+  );
 }
 
 /// Salinan [rust.PadSettings] dengan sebagian nilai diganti.

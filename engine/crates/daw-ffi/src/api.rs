@@ -305,6 +305,216 @@ pub fn pad_import_wav(pad: u8, file_name: String, bytes: Vec<u8>) -> Result<PadS
     pad_settings(pad).ok_or_else(|| "pad tidak ada".to_owned())
 }
 
+/// Pengaturan sequencer dan pola untuk layar (rencana §4.3, §10).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SeqConfig {
+    /// Tempo 40..240 BPM, satu desimal.
+    pub bpm: f32,
+    /// Swing 0,5..0,75.
+    pub swing: f32,
+    /// Metronom saat merekam.
+    pub metronome: bool,
+    /// Count-in 0..=2 bar.
+    pub count_in_bars: u8,
+    /// Panjang pola 1..=16 bar.
+    pub bars: u8,
+    /// Grid kuantisasi (tick; 240 = 1/16; 0 = mati).
+    pub quantize_grid: u32,
+    /// Kekuatan kuantisasi 0..1.
+    pub quantize_strength: f32,
+}
+
+/// Satu not pola (rencana §10): tick mentah, 960 per ketukan.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NoteData {
+    /// Posisi (tick).
+    pub tick: u32,
+    /// Nomor pad.
+    pub pad: u8,
+    /// Kekuatan 0..1.
+    pub velocity: f32,
+    /// Panjang (tick).
+    pub length: u32,
+}
+
+/// Posisi transport untuk layar segmen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TransportState {
+    /// Sedang bermain.
+    pub playing: bool,
+    /// Sedang merekam.
+    pub recording: bool,
+    /// Tick sejak mulai; negatif saat count-in.
+    pub position_ticks: i64,
+    /// Bar di dalam pola (1..), atau −1/−2 saat count-in.
+    pub bar: i32,
+    /// Ketukan di dalam bar (1..=4).
+    pub beat: i32,
+    /// Langkah 1/16 di dalam pola (0..), −1 saat berhenti atau count-in.
+    pub step: i32,
+    /// Jumlah not di pola.
+    pub note_count: u32,
+}
+
+/// Pengaturan sequencer dan pola saat ini.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn seq_config() -> SeqConfig {
+    crate::audio::baca_seq(|q| SeqConfig {
+        bpm: q.settings.bpm,
+        swing: q.settings.swing,
+        metronome: q.settings.metronome,
+        count_in_bars: q.settings.count_in_bars,
+        bars: q.pattern.bars,
+        quantize_grid: q.pattern.quantize_grid,
+        quantize_strength: q.pattern.quantize_strength,
+    })
+}
+
+/// Simpan pengaturan (nilai dibatasi ke jangkauan sah). Mengembalikan nilai
+/// yang benar-benar tersimpan.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn set_seq_config(config: SeqConfig) -> SeqConfig {
+    use daw_core::seq::{MAX_BARS, SeqSettings};
+    let pola = crate::audio::baca_seq(|q| {
+        let p = &q.pattern;
+        let bars = config.bars.clamp(1, MAX_BARS);
+        let strength = if config.quantize_strength.is_finite() {
+            config.quantize_strength.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let grid = config.quantize_grid.min(daw_core::seq::TICKS_PER_BAR);
+        (p.bars != bars
+            || p.quantize_grid != grid
+            || p.quantize_strength.to_bits() != strength.to_bits())
+        .then(|| daw_core::seq::Pattern {
+            bars,
+            quantize_grid: grid,
+            quantize_strength: strength,
+            notes: p.notes.clone(),
+        })
+    });
+    let pengaturan = SeqSettings {
+        bpm: config.bpm,
+        swing: config.swing,
+        metronome: config.metronome,
+        count_in_bars: config.count_in_bars,
+    };
+    crate::audio::atur_seq(pola, Some(pengaturan));
+    seq_config()
+}
+
+/// Semua not pola (tick mentah).
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pattern_notes() -> Vec<NoteData> {
+    crate::audio::baca_seq(|q| {
+        q.pattern
+            .notes
+            .iter()
+            .map(|n| NoteData {
+                tick: n.tick,
+                pad: n.pad,
+                velocity: n.velocity,
+                length: n.length,
+            })
+            .collect()
+    })
+}
+
+/// Ganti semua not pola (mis. dari grid langkah, atau dikosongkan). Not di
+/// luar panjang pola atau untuk pad yang tidak ada dibuang.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+#[allow(clippy::needless_pass_by_value)] // flutter_rust_bridge memberi Vec milik sendiri
+pub fn set_pattern_notes(notes: Vec<NoteData>) -> bool {
+    let pola = crate::audio::baca_seq(|q| {
+        let panjang = q.pattern.length_ticks();
+        daw_core::seq::Pattern {
+            notes: notes
+                .iter()
+                .filter(|n| n.tick < panjang && usize::from(n.pad) < daw_core::pad::PAD_COUNT)
+                .map(|n| daw_core::seq::Note {
+                    tick: n.tick,
+                    pad: n.pad,
+                    velocity: if n.velocity.is_finite() {
+                        n.velocity.clamp(0.0, 1.0)
+                    } else {
+                        1.0
+                    },
+                    length: n.length.max(1),
+                })
+                .collect(),
+            ..q.pattern.clone()
+        }
+    });
+    crate::audio::atur_seq(Some(pola), None)
+}
+
+/// Mulai bermain dari awal pola. `record`: rekam ketukan (didahului
+/// count-in). `false` bila mesin belum berjalan.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn transport_play(record: bool) -> bool {
+    crate::audio::transport(true, record)
+}
+
+/// Berhenti.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn transport_stop() -> bool {
+    crate::audio::transport(false, false)
+}
+
+/// Rekam hidup/mati tanpa berhenti (overdub).
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn transport_record(enabled: bool) -> bool {
+    crate::audio::atur_rekam(enabled)
+}
+
+/// Posisi transport. Dipanggil ±30 kali per detik oleh layar; sekaligus
+/// memasukkan ketukan yang direkam ke pola.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn transport_state() -> TransportState {
+    use daw_core::seq::{PPQN, STEP_TICKS, TICKS_PER_BAR};
+    let (playing, recording, tick) = crate::audio::status_transport();
+    let (panjang, note_count) = crate::audio::baca_seq(|q| {
+        (
+            i64::from(q.pattern.length_ticks()),
+            u32::try_from(q.pattern.notes.len()).unwrap_or(u32::MAX),
+        )
+    });
+    let bar_t = i64::from(TICKS_PER_BAR);
+    let (bar, beat, step) = if !playing {
+        (1, 1, -1)
+    } else if tick < 0 {
+        let bar = tick.div_euclid(bar_t);
+        let beat = tick.rem_euclid(bar_t) / i64::from(PPQN) + 1;
+        (bar, beat, -1)
+    } else {
+        let pos = tick % panjang;
+        (
+            pos / bar_t + 1,
+            (pos % bar_t) / i64::from(PPQN) + 1,
+            pos / i64::from(STEP_TICKS),
+        )
+    };
+    let ke_i32 = |v: i64| i32::try_from(v).unwrap_or(0);
+    TransportState {
+        playing,
+        recording,
+        position_ticks: tick,
+        bar: ke_i32(bar),
+        beat: ke_i32(beat),
+        step: ke_i32(step),
+        note_count,
+    }
+}
+
 /// Angka kesehatan mesin saat ini.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
