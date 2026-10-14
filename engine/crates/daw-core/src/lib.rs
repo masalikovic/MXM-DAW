@@ -6,8 +6,10 @@
 //! di mesin mana pun tanpa HP (ADR-0001, ADR-0002).
 //!
 //! M0: versi mesin. M1: mesin real-time ([`engine`]). M2: sampler 16 pad
-//! ([`pad`], [`sampel`], DSP di [`dsp`]) dan kit pabrik sintetis ([`kit`]).
+//! ([`pad`], [`sampel`], model di [`bank`], DSP di [`dsp`]) dan kit pabrik
+//! sintetis ([`kit`]).
 
+pub mod bank;
 pub mod dsp;
 pub mod engine;
 pub mod kit;

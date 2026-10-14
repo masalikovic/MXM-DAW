@@ -337,3 +337,22 @@ fn antrean_penuh_dibuang_dan_dihitung() {
     assert!(!k.hit(KICK, 1.0));
     assert_eq!(k.stats().hits_dropped(), 1);
 }
+
+#[test]
+fn bank_dibawa_ke_mesin_baru() {
+    let (_m, mut k) = mesin();
+    k.set_sample(2, "SINUS", sinus(440.0));
+    let p = PadParams {
+        pitch: 7.0,
+        ..*k.pad(2).unwrap()
+    };
+    k.set_pad(2, &p);
+    let bank = k.into_bank();
+
+    // Seperti aplikasi kembali dari latar: mesin baru dari bank yang sama.
+    let (mut m, mut k) = Engine::with_bank(SR, bank);
+    assert_eq!(k.name(2), Some("SINUS"));
+    assert!((k.pad(2).unwrap().pitch - 7.0).abs() < f32::EPSILON);
+    k.hit(2, 1.0);
+    assert!(rms(&render(&mut m, 0.1, 2)) > 0.1);
+}

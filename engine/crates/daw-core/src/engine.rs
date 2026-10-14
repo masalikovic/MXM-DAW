@@ -12,7 +12,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::kit::factory_kit;
+use crate::bank::PadBank;
 use crate::pad::{PAD_COUNT, PadParams};
 use crate::sampel::Sampel;
 use crate::suara::Suara;
@@ -97,9 +97,7 @@ pub struct EventSender {
     produsen: rtrb::Producer<Event>,
     sampah: rtrb::Consumer<Arc<Sampel>>,
     stats: Arc<EngineStats>,
-    pads: [PadParams; PAD_COUNT],
-    sampel: [Option<Arc<Sampel>>; PAD_COUNT],
-    nama: [String; PAD_COUNT],
+    bank: PadBank,
 }
 
 impl EventSender {
@@ -136,8 +134,8 @@ impl EventSender {
         }
     }
 
-    /// Ganti parameter pad. Nilai disanitasi dulu; model di sisi UI hanya
-    /// berubah bila event berhasil masuk antrean.
+    /// Ganti parameter pad. Nilai disanitasi dulu; model hanya berubah bila
+    /// event berhasil masuk antrean.
     pub fn set_pad(&mut self, pad: usize, params: &PadParams) -> bool {
         let Some(p) = u8::try_from(pad).ok().filter(|_| pad < PAD_COUNT) else {
             return false;
@@ -145,13 +143,13 @@ impl EventSender {
         let params = params.sanitized();
         let ok = self.kirim(Event::SetPad { pad: p, params });
         if ok {
-            self.pads[pad] = params;
+            self.bank.set_params(pad, &params);
         }
         ok
     }
 
-    /// Ganti sampel pad (mis. hasil impor). `end` pad diatur ke panjang
-    /// sampel dan `start` ke 0.
+    /// Ganti sampel pad (mis. hasil impor). `start` pad menjadi 0 dan `end`
+    /// panjang sampel.
     pub fn set_sample(&mut self, pad: usize, name: &str, sample: Sampel) -> bool {
         let Some(p) = u8::try_from(pad).ok().filter(|_| pad < PAD_COUNT) else {
             return false;
@@ -163,32 +161,40 @@ impl EventSender {
         }) {
             return false;
         }
-        let params = PadParams {
-            start: 0,
-            end: u32::try_from(sample.frames()).unwrap_or(u32::MAX),
-            ..self.pads[pad]
-        };
-        self.sampel[pad] = Some(sample);
-        name.clone_into(&mut self.nama[pad]);
-        self.set_pad(pad, &params)
+        let params = self.bank.set_sample(pad, name, sample);
+        params.is_some_and(|params| self.kirim(Event::SetPad { pad: p, params }))
     }
 
     /// Parameter pad saat ini.
     #[must_use]
     pub fn pad(&self, pad: usize) -> Option<&PadParams> {
-        self.pads.get(pad)
+        self.bank.params(pad)
     }
 
     /// Sampel pad saat ini.
     #[must_use]
     pub fn sample(&self, pad: usize) -> Option<&Arc<Sampel>> {
-        self.sampel.get(pad).and_then(Option::as_ref)
+        self.bank.sample(pad)
     }
 
     /// Nama suara pad.
     #[must_use]
     pub fn name(&self, pad: usize) -> Option<&str> {
-        self.nama.get(pad).map(String::as_str)
+        self.bank.name(pad)
+    }
+
+    /// Model 16 pad.
+    #[must_use]
+    pub fn bank(&self) -> &PadBank {
+        &self.bank
+    }
+
+    /// Ambil model untuk disimpan saat mesin dibebaskan. Sampel lama yang
+    /// masih di antrean sampah ikut dibebaskan di sini (thread UI).
+    #[must_use]
+    pub fn into_bank(mut self) -> PadBank {
+        self.empty_trash();
+        self.bank
     }
 
     /// Bebaskan sampel lama yang dikembalikan thread audio. Dipanggil
@@ -223,20 +229,23 @@ pub struct Engine {
 impl Engine {
     /// Mesin baru untuk `sample_rate` dengan kit pabrik terpasang, beserta
     /// pengirim event untuk UI.
-    ///
-    /// Semua alokasi (termasuk sintesis kit) terjadi di sini, bukan di thread
-    /// audio.
     #[must_use]
     pub fn new(sample_rate: u32) -> (Self, EventSender) {
+        Self::with_bank(sample_rate, PadBank::factory())
+    }
+
+    /// Mesin baru yang memainkan isi `bank` (mis. bank yang disimpan saat
+    /// aplikasi ke latar).
+    ///
+    /// Semua alokasi terjadi di sini, bukan di thread audio.
+    #[must_use]
+    pub fn with_bank(sample_rate: u32, bank: PadBank) -> (Self, EventSender) {
         let (produsen, konsumen) = rtrb::RingBuffer::new(EVENT_CAPACITY);
         // Setiap SetSample mengembalikan paling banyak satu sampel lama.
         let (sampah_tulis, sampah_baca) = rtrb::RingBuffer::new(EVENT_CAPACITY);
         let stats = Arc::new(EngineStats::default());
-        let kit = factory_kit();
-        let pads: [PadParams; PAD_COUNT] = core::array::from_fn(|i| kit[i].params);
-        let sampel: [Option<Arc<Sampel>>; PAD_COUNT] =
-            core::array::from_fn(|i| Some(Arc::new(kit[i].sample.clone())));
-        let nama = core::array::from_fn(|i| kit[i].name.to_owned());
+        let pads = core::array::from_fn(|i| bank.params(i).copied().unwrap_or_default());
+        let sampel = core::array::from_fn(|i| bank.sample(i).cloned());
         #[allow(clippy::cast_precision_loss)]
         let sr = sample_rate.max(1) as f32;
         (
@@ -245,7 +254,7 @@ impl Engine {
                 sampah: sampah_tulis,
                 suara: Box::new([Suara::default(); MAX_VOICES]),
                 pads,
-                sampel: sampel.clone(),
+                sampel,
                 sr,
                 campur: Box::new([0.0; BLOK * 2]),
                 stats: Arc::clone(&stats),
@@ -254,9 +263,7 @@ impl Engine {
                 produsen,
                 sampah: sampah_baca,
                 stats,
-                pads,
-                sampel,
-                nama,
+                bank,
             },
         )
     }
