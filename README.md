@@ -40,6 +40,7 @@ Mesin audio ada di folder `engine/` (ADR-0001). Versi Rust dikunci di
 cd engine
 cargo test                          # semua tes
 cargo run -p daw-render -- --version
+cargo run -p daw-render -- kick kick.wav     # dengarkan kick mesin (WAV)
 cargo clippy --all-targets -- -D warnings
 cargo deny check                    # lisensi & keamanan dependensi (perlu cargo-deny)
 ```

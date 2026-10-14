@@ -5,9 +5,11 @@
 //! Flutter adalah urusan crate lain, sehingga semua yang ada di sini bisa dites
 //! di mesin mana pun tanpa HP (ADR-0001, ADR-0002).
 //!
-//! Di M0 isinya baru satu fungsi: versi mesin. Fungsi ini membuktikan bahwa
-//! rantai Rust → Flutter → APK → HP bekerja, karena angkanya akan tampil di
-//! layar aplikasi.
+//! M0: versi mesin. M1: mesin real-time ([`engine`]) dengan satu suara kick
+//! sintetis ([`kick`]).
+
+pub mod engine;
+pub mod kick;
 
 /// Versi mesin, diambil dari `version` di `engine/Cargo.toml` saat kompilasi.
 ///
