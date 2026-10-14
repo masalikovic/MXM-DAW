@@ -1,0 +1,18 @@
+# Konfigurasi flutter_rust_bridge_codegen (ADR-0004).
+# Jalankan dari folder app/:  flutter_rust_bridge_codegen generate
+#
+# rust_input : modul Rust yang fungsi publiknya diberi pasangan Dart
+# rust_root  : crate yang memuat modul itu
+# dart_output: folder kode Dart hasil generator (jangan diedit tangan)
+rust_input: crate::api
+rust_root: ../engine/crates/daw-ffi/
+dart_output: lib/engine/bridge/
+
+# Hanya Android (ADR-0009); tidak ada versi web.
+web: false
+# `mod frb_generated;` sudah ditulis sendiri di daw-ffi/src/lib.rs.
+add_mod_to_lib: false
+# Generator tidak boleh mengubah versi dependensi diam-diam; versinya
+# dikunci manual di engine/Cargo.toml dan pubspec.yaml.
+auto_upgrade_dependency: false
+stop_on_error: true

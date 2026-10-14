@@ -1,13 +1,14 @@
 # Workspace Rust mesin MXM-DAW (rencana §8.3).
 #
-#   daw-render ──▶ daw-core
+#   daw-render ──▶ daw-core ◀── daw-ffi ◀── Flutter (app/)
 #
 # daw-core: model, sequencer, voices, DSP, FX. Tanpa I/O (ADR-0001, ADR-0002).
 # daw-render: CLI untuk merender proyek/kit ke WAV, golden test, benchmark.
-# Crate daw-io dan daw-ffi ditambahkan saat dibutuhkan.
+# daw-ffi: API untuk Flutter lewat flutter_rust_bridge (ADR-0004).
+# Crate daw-io ditambahkan saat dibutuhkan.
 [workspace]
 resolver = "3"
-members = ["crates/daw-core", "crates/daw-render"]
+members = ["crates/daw-core", "crates/daw-ffi", "crates/daw-render"]
 
 # Nilai bersama; tiap crate mewarisinya dengan `xxx.workspace = true`.
 [workspace.package]
@@ -20,11 +21,18 @@ publish = false
 
 [workspace.dependencies]
 daw-core = { path = "crates/daw-core" }
+# Versi dikunci persis (`=`): crate Rust, paket Dart `flutter_rust_bridge`
+# di app/pubspec.yaml, dan alat flutter_rust_bridge_codegen di CI harus
+# memakai versi yang sama (ADR-0004). Ubah ketiganya bersamaan.
+flutter_rust_bridge = "=2.13.0"
 
 # Lint bersama. `warn` di sini menjadi error di CI karena clippy dijalankan
 # dengan `-D warnings` (rencana §13.2).
 [workspace.lints.rust]
 missing_docs = "warn"
+# Makro flutter_rust_bridge memakai cfg `frb_expand`; daftarkan supaya
+# compiler tidak menganggapnya salah ketik.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

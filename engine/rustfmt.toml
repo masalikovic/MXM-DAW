@@ -1,0 +1,6 @@
+# flutter_rust_bridge_codegen memanggil `rustfmt --edition 2018` langsung,
+# sehingga gaya format edisi lama dipakai dan hasilnya berbeda dengan
+# `cargo fmt` (edisi 2024 dari Cargo.toml). `style_edition` mengatur gaya
+# format secara terpisah dari edisi bahasa, jadi keduanya kini sama dan kode
+# hasil generator langsung lolos `cargo fmt --check` di CI.
+style_edition = "2024"

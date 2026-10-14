@@ -6,6 +6,8 @@ analyzer:
   exclude:
     - build/**
     - android/**
+    # Kode hasil flutter_rust_bridge_codegen; CI memeriksa ia tidak basi.
+    - lib/engine/bridge/**
   language:
     strict-casts: true
     strict-inference: true

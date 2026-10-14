@@ -1,8 +1,8 @@
 # CI MXM-DAW (rencana §13.3).
 #
-# Saat ini baru ada job `engine`. Job berikutnya ditambahkan per langkah:
+# Job ditambahkan per langkah M0:
 #   engine   Rust: fmt, clippy pedantic, test, CLI, cargo-deny   (M0 langkah 2)
-#   app      Flutter: format, analyze, test                       (M0 langkah 3)
+#   app      Flutter: codegen FRB, format, analyze, test           (M0 langkah 3, 5)
 #   android  cargo-ndk → CMake → APK, cek manifest & ukuran       (langkah 6)
 #   preview  APK pratinjau bertanda tangan di Releases            (langkah 7)
 name: CI
@@ -40,7 +40,7 @@ jobs:
       - name: Pasang toolchain dari rust-toolchain.toml
         run: rustup toolchain install && rustup show active-toolchain
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -70,9 +70,9 @@ jobs:
         run: cargo deny --locked check
 
   app:
-    name: Flutter · format, analyze, test, APK debug
+    name: Flutter · codegen, format, analyze, test, APK debug
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: app
@@ -84,6 +84,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      # Rust dibutuhkan untuk generator flutter_rust_bridge dan untuk
+      # membangun pustaka daw-ffi yang dimuat tes Dart (ADR-0004).
+      - name: Pasang toolchain Rust dari rust-toolchain.toml
+        working-directory: engine
+        run: rustup toolchain install && rustup show active-toolchain
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/target
+          key: cargo-app-${{ runner.os }}-${{ hashFiles('engine/rust-toolchain.toml', 'engine/Cargo.lock') }}
 
       # Versi Flutter dibaca dari `environment.flutter` di app/pubspec.yaml,
       # jadi hanya ada satu tempat untuk mengubahnya.
@@ -102,17 +116,45 @@ jobs:
       - name: Dependensi (pubspec.lock)
         run: flutter pub get --enforce-lockfile
 
+      # flutter_rust_bridge_codegen harus sama dengan flutter_rust_bridge di
+      # engine/Cargo.toml dan app/pubspec.yaml (ADR-0004). Generator memakai
+      # cargo-expand; bila tidak ada, ia memasang versi terbaru sendiri dari
+      # internet. Versinya dikunci di sini supaya hasil CI bisa diulang.
+      - name: Pasang flutter_rust_bridge_codegen dan cargo-expand
+        uses: taiki-e/install-action@v2
+        with:
+          tool: flutter_rust_bridge_codegen@2.13.0,cargo-expand@1.0.127
+
+      # Generator dijalankan ulang; hasilnya harus sama persis dengan yang
+      # di-commit. Bila berbeda, seseorang mengubah api.rs tanpa menjalankan
+      # generator, atau mengedit kode hasil generator dengan tangan.
+      - name: Kode hasil generator tidak basi
+        run: |
+          flutter_rust_bridge_codegen generate
+          berubah=$(git status --porcelain -- lib/engine/bridge ../engine/crates/daw-ffi/src)
+          if [ -n "$berubah" ]; then
+            echo "::error::Kode hasil flutter_rust_bridge_codegen basi. Jalankan 'flutter_rust_bridge_codegen generate' di app/ lalu commit."
+            echo "$berubah"
+            git diff -- lib/engine/bridge ../engine/crates/daw-ffi/src
+            exit 1
+          fi
+
       - name: Format (dart format)
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analisis (temuan sekecil apa pun = gagal)
         run: flutter analyze --fatal-infos
 
-      - name: Tes widget
+      # Pustaka host yang dimuat test/engine/rust_bridge_test.dart.
+      - name: Bangun daw-ffi untuk tes host
+        working-directory: engine
+        run: cargo build --locked -p daw-ffi
+
+      - name: Tes (widget + jembatan Rust)
         run: flutter test
 
-      # Belum ada Rust di APK (itu langkah 6). Build debug ini hanya membuktikan
-      # bahwa konfigurasi Android (minSdk, manifest, ikon adaptif) valid.
+      # Pustaka Rust belum masuk APK (itu langkah 6). Build debug ini hanya
+      # membuktikan bahwa konfigurasi Android tetap valid.
       # Runner GitHub sudah membawa Android SDK, jadi tidak perlu dipasang.
       - name: Build APK debug (cek konfigurasi Android)
         run: flutter build apk --debug --target-platform android-arm64

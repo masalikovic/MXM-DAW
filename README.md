@@ -50,10 +50,21 @@ Aplikasi ada di folder `app/`. Versi Flutter dikunci di `app/pubspec.yaml`
 (`environment.flutter`, saat ini 3.47.7).
 
 ```text
+cd engine && cargo build -p daw-ffi && cd ..   # pustaka Rust untuk tes Dart
 cd app
 flutter pub get --enforce-lockfile
 flutter analyze --fatal-infos
 flutter test
+```
+
+Jembatan Dart ↔ Rust dibuat oleh flutter_rust_bridge 2.13.0 (ADR-0004).
+Setelah mengubah `engine/crates/daw-ffi/src/api.rs`, jalankan generator dari
+folder `app/` lalu commit hasilnya; CI gagal bila hasilnya basi:
+
+```text
+cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
+cargo install cargo-expand --version 1.0.127 --locked
+cd app && flutter_rust_bridge_codegen generate
 ```
 
 ## Memasang di HP
