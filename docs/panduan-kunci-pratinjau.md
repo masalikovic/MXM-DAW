@@ -54,11 +54,26 @@ Dibutuhkan tiga secret:
 
 **Cara A: GitHub CLI (disarankan, tanpa menyalin teks panjang):**
 
+> **Jalankan satu per satu.** Tunggu `gh auth login` selesai (`✓ Logged in
+> as …`) sebelum perintah berikutnya, dan tunggu `✓ Set Actions secret …`
+> setelah setiap `gh secret set`. Bila semuanya ditempel sekaligus, perintah
+> yang berjalan sebelum login selesai tidak menyimpan apa pun (kejadian nyata
+> di M0, lihat docs/jurnal/m0.md).
+
 ```sh
 gh auth login
+```
+```sh
 gh secret set MXMDAW_PRATINJAU_KEYSTORE_B64 --repo masalikovic/MXM-DAW < <(base64 -w 0 mxmdaw-pratinjau.jks)
+```
+```sh
 gh secret set MXMDAW_PRATINJAU_PASSWORD --repo masalikovic/MXM-DAW
+```
+```sh
 gh secret set MXMDAW_PRATINJAU_ALIAS --repo masalikovic/MXM-DAW --body pratinjau
+```
+```sh
+gh secret list --repo masalikovic/MXM-DAW   # harus menampilkan 3 nama
 ```
 
 Perintah kedua menanyakan kata sandi secara tersembunyi, jadi kata sandi tidak
@@ -101,3 +116,6 @@ di-uninstall, dan proyek ikut terhapus.
 | `cek-tanda-tangan.sh`: "belum berisi sidik jari" | Langkah 4 belum dilakukan | Cocokkan sidik jari di pesan CI dengan keluaran `keytool`, lalu kirim ke agen |
 | `cek-tanda-tangan.sh`: "ditandatangani kunci lain" | Secret berisi keystore yang berbeda | Atur ulang secret dengan keystore yang benar; **jangan** mengganti sidik jari |
 | Gradle: "keystore password was incorrect" | Kata sandi salah | Atur ulang `MXMDAW_PRATINJAU_PASSWORD` |
+| `gh secret list`: "no secrets found" | Perintah dijalankan sebelum login selesai | Ulangi langkah 3 satu per satu |
+| Job "Pratinjau" gagal dengan HTTP 500 | Galat sementara di server GitHub | `gh run rerun <id> --failed --repo masalikovic/MXM-DAW` |
+| Nama langkah CI berisi `***` | GitHub menyamarkan teks yang sama dengan isi secret (alias `pratinjau`) | Normal, tidak perlu diperbaiki |

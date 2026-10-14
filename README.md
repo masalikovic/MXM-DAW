@@ -20,8 +20,8 @@ keputusan dicatat, dan setiap tahap punya bukti selesai yang bisa diperiksa.
 
 | Tahap | Isi | Status |
 |---|---|---|
-| M0 | Fondasi: ADR, CI, token desain, aplikasi kosong yang memanggil Rust, APK pratinjau | 🟡 berjalan |
-| M1 | Mesin audio: Oboe + render Rust, panel kesehatan mesin | ⚪ belum |
+| M0 | Fondasi: ADR, CI, token desain, aplikasi kosong yang memanggil Rust, APK pratinjau | ✅ selesai ([jurnal](docs/jurnal/m0.md)) |
+| M1 | Mesin audio: Oboe + render Rust, panel kesehatan mesin | 🟡 berikutnya |
 | M2 | Pad & sampler dasar | ⚪ belum |
 | M3 | Sequencer | ⚪ belum |
 | M4 | Grup, keys, proyek (MVP) | ⚪ belum |
