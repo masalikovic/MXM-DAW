@@ -67,6 +67,8 @@ skenario() {
 echo 'android.permission.RECORD_AUDIO' >"$kerja/izin-mic.txt"
 
 skenario "APK bersih diterima" 0 "" ada ""
+skenario "izin androidx dari tools/izin-rilis.txt diterima" 0 \
+  "io.github.masalikovic.mxmdaw.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" ada ""
 skenario "INTERNET ditolak (ADR-0006)" 1 "android.permission.INTERNET" ada ""
 skenario "izin tak terdaftar ditolak" 1 "android.permission.RECORD_AUDIO" ada ""
 skenario "izin terdaftar diterima" 0 "android.permission.RECORD_AUDIO" ada "" IZIN_RILIS="$kerja/izin-mic.txt"

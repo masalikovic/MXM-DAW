@@ -1,6 +1,14 @@
 # Izin Android yang boleh ada di APK pratinjau/rilis (ADR-0006).
 # Satu nama per baris. tools/cek-apk.sh gagal bila APK meminta izin lain.
 # Menambah baris di sini berarti mengubah janji privasi: lakukan lewat PR
-# dengan alasan yang jelas. INTERNET tidak pernah boleh ada di sini.
-#
-# Saat ini kosong: MXM-DAW tidak meminta izin apa pun.
+# dengan alasan yang jelas. INTERNET tidak pernah boleh ada di sini, dan
+# cek-apk.sh tetap menolaknya walaupun tercantum.
+
+# Ditambahkan androidx.core (dibawa Flutter). Izin level *signature* yang
+# didefinisikan aplikasi sendiri: hanya aplikasi bertanda tangan kunci yang
+# sama yang bisa memegangnya. Gunanya mengamankan broadcast receiver internal.
+# Tidak memberi akses jaringan, mikrofon, berkas, atau data, dan tidak pernah
+# ditanyakan ke pengguna. Disetujui pemilik di PR #7 (2026-10-14).
+# Satu baris per application ID: rilis dan pratinjau (ADR-0009 butir 1).
+io.github.masalikovic.mxmdaw.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+io.github.masalikovic.mxmdaw.preview.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
