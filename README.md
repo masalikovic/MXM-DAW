@@ -75,9 +75,10 @@ cargo-ndk) + adapter C++ (CMake), lihat ADR-0003. Hanya arm64-v8a
 dan `cargo install cargo-ndk --version 4.1.2 --locked`.
 
 ```text
-tools/build-android.sh                     # Rust → CMake → app-release.apk
-tools/cek-apk.sh app/build/app/outputs/flutter-apk/app-release.apk
+tools/build-android.sh                     # Rust → CMake → app-pratinjau-release.apk
+tools/cek-apk.sh app/build/app/outputs/flutter-apk/app-pratinjau-release.apk
 tools/tes-cek-apk.sh                       # tes untuk pemeriksa APK itu sendiri
+tools/tes-cek-tanda-tangan.sh              # tes untuk pemeriksa tanda tangan
 ```
 
 `cek-apk.sh` gagal bila APK meminta izin di luar `tools/izin-rilis.txt`
@@ -87,8 +88,28 @@ CI menjalankan semuanya dan mengunggah APK sebagai artefak.
 
 ## Memasang di HP
 
-Belum ada APK. APK pratinjau pertama terbit di akhir M0 lewat halaman
-Releases, dan panduan pemasangannya ditulis di sini.
+Setiap merge ke `main` menerbitkan APK pratinjau di halaman
+[Releases](https://github.com/masalikovic/MXM-DAW/releases) (pre-release
+`preview-<build>`, ADR-0012). Aplikasinya bernama **MXM-DAW Pratinjau** dan
+bisa terpasang berdampingan dengan versi rilis kelak.
+
+1. Buka halaman Releases di HP, pilih pratinjau terbaru, lalu unduh berkas
+   `mxm-daw-preview-<build>-arm64-v8a.apk`.
+2. (Opsional) Cocokkan SHA-256 berkas dengan isi berkas `.sha256` di rilis yang
+   sama.
+3. Buka berkas APK. Android meminta izin "Instal aplikasi tidak dikenal" untuk
+   browser atau pengelola berkas Anda: izinkan untuk aplikasi itu saja.
+4. **MIUI (Redmi):** MIUI bisa menampilkan pemindaian keamanan dan meminta
+   konfirmasi tambahan. Pilih untuk tetap memasang. Google Play Protect bisa
+   memperingatkan "aplikasi tidak dikenal" karena APK tidak berasal dari Play
+   Store; pilih **Instal saja**.
+5. Pratinjau berikutnya dipasang di atas yang lama tanpa uninstall, karena
+   kuncinya selalu sama.
+
+Layar aplikasi menampilkan `MESIN <versi>` dari Rust. Bila tertulis
+`MESIN TIDAK TERMUAT`, alasannya tampil di bawahnya; mohon laporkan teks itu.
+
+Pemilik membuat kunci pratinjau satu kali: [docs/panduan-kunci-pratinjau.md](docs/panduan-kunci-pratinjau.md).
 
 ## Privasi
 

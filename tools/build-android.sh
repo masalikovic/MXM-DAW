@@ -5,7 +5,8 @@
 #   2. flutter build apk: Gradle → CMake (Rust + C++ → libmxm_engine.so) → APK
 #
 # Butuh: Rust (rustup), cargo-ndk, Flutter, Android SDK + NDK (ANDROID_NDK_HOME).
-# Argumen tambahan diteruskan ke `flutter build apk`, mis. --debug.
+# Saluran dipilih lewat MXMDAW_SALURAN (bawaan: pratinjau; ADR-0012).
+# Argumen tambahan diteruskan ke `flutter build apk`, mis. --build-number=7.
 set -euo pipefail
 
 akar="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,4 +18,5 @@ cargo ndk --target arm64-v8a --platform 27 build --release --locked -p daw-ffi
 
 echo "== 2/2 APK (Flutter + Gradle + CMake)"
 cd "$akar/app"
-flutter build apk --target-platform android-arm64 "${@:---release}"
+flutter build apk --release --target-platform android-arm64 \
+  --flavor "${MXMDAW_SALURAN:-pratinjau}" "$@"

@@ -4,7 +4,7 @@
 #   engine   Rust: fmt, clippy pedantic, test, CLI, cargo-deny   (M0 langkah 2)
 #   app      Flutter: codegen FRB, format, analyze, test           (M0 langkah 3, 5)
 #   android  cargo-ndk → CMake → APK rilis, cek izin/ABI/ukuran   (M0 langkah 6)
-#   preview  APK pratinjau bertanda tangan di Releases            (langkah 7)
+#   preview  APK pratinjau bertanda tangan di Releases (main)     (M0 langkah 7)
 name: CI
 
 on:
@@ -154,6 +154,14 @@ jobs:
     name: Android · cargo-ndk, CMake, APK rilis, cek izin/ABI/ukuran
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # Kunci pratinjau milik pemilik hanya dipakai untuk push ke main
+    # (ADR-0012). PR selalu memakai kunci debug, jadi kode yang belum
+    # di-merge tidak pernah ditandatangani kunci asli.
+    env:
+      KUNCI_B64: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.MXMDAW_PRATINJAU_KEYSTORE_B64 || '' }}
+      APK: app/build/app/outputs/flutter-apk/app-pratinjau-release.apk
+    outputs:
+      jenis_kunci: ${{ steps.kunci.outputs.jenis }}
     steps:
       - uses: actions/checkout@v5
 
@@ -207,18 +215,108 @@ jobs:
       - name: Tes pemeriksa APK (tools/tes-cek-apk.sh)
         run: tools/tes-cek-apk.sh
 
-      - name: Build APK rilis arm64-v8a (tools/build-android.sh)
-        run: tools/build-android.sh
+      - name: Tes pemeriksa tanda tangan (tools/tes-cek-tanda-tangan.sh)
+        run: tools/tes-cek-tanda-tangan.sh
+
+      # Tiga jenis kunci (ADR-0012), keystore selalu di folder sementara runner,
+      # tidak pernah dicetak, dan dihapus di akhir job:
+      #   pemilik   : push ke main + secret ada → APK diterbitkan
+      #   sementara : PR → kunci sekali pakai dibuat di sini, supaya jalur
+      #               tanda tangan (Gradle + apksigner) teruji sebelum merge
+      #   tidak-ada : push ke main tanpa secret → kunci debug, tidak diterbitkan
+      - name: Siapkan kunci tanda tangan
+        id: kunci
+        env:
+          SANDI_PEMILIK: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.MXMDAW_PRATINJAU_PASSWORD || '' }}
+          ALIAS_PEMILIK: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.MXMDAW_PRATINJAU_ALIAS || '' }}
+        run: |
+          ks="$RUNNER_TEMP/kunci.jks"
+          if [ -n "$KUNCI_B64" ]; then
+            printf '%s' "$KUNCI_B64" | base64 -d >"$ks"
+            sandi="$SANDI_PEMILIK"; alias="$ALIAS_PEMILIK"; jenis=pemilik
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "::warning::Secret MXMDAW_PRATINJAU_KEYSTORE_B64 belum diatur; APK ditandatangani kunci debug dan tidak diterbitkan (docs/panduan-kunci-pratinjau.md)."
+            echo "jenis=tidak-ada" >>"$GITHUB_OUTPUT"
+            exit 0
+          else
+            sandi="$(openssl rand -hex 24)"; alias=sementara; jenis=sementara
+            echo "::add-mask::$sandi"
+            keytool -genkeypair -keystore "$ks" -storetype PKCS12 -alias "$alias" \
+              -keyalg RSA -keysize 2048 -validity 1 -dname "CN=Kunci sementara CI" \
+              -storepass "$sandi" -keypass "$sandi" >/dev/null 2>&1
+            keytool -list -v -keystore "$ks" -alias "$alias" -storepass "$sandi" |
+              sed -n 's/^[[:space:]]*SHA256: //p' >"$RUNNER_TEMP/sidik-sementara.txt"
+          fi
+          {
+            echo "MXMDAW_KEYSTORE=$ks"
+            echo "MXMDAW_KEYSTORE_PASSWORD=$sandi"
+            echo "MXMDAW_KEY_ALIAS=$alias"
+          } >>"$GITHUB_ENV"
+          echo "jenis=$jenis" >>"$GITHUB_OUTPUT"
+
+      # Nomor build = nomor run CI, selalu naik, jadi APK baru bisa dipasang
+      # di atas yang lama (rencana §13.4).
+      - name: Build APK pratinjau arm64-v8a (tools/build-android.sh)
+        run: tools/build-android.sh --build-number=${{ github.run_number }}
+
+      - name: Hapus keystore dari runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/kunci.jks"
 
       - name: Periksa APK (izin, libmxm_engine.so, ABI, ekspor Rust, ukuran)
-        run: tools/cek-apk.sh app/build/app/outputs/flutter-apk/app-release.apk
+        run: tools/cek-apk.sh "$APK"
 
-      # Sementara masih ditandatangani kunci debug; APK untuk dipasang di HP
-      # pemilik (kunci pratinjau tetap) terbit di M0 langkah 7.
+      - name: Periksa tanda tangan = kunci pratinjau pemilik
+        if: steps.kunci.outputs.jenis == 'pemilik'
+        run: tools/cek-tanda-tangan.sh "$APK"
+
+      - name: Periksa tanda tangan = kunci sementara (menguji jalurnya di PR)
+        if: steps.kunci.outputs.jenis == 'sementara'
+        env:
+          SIDIK_KUNCI: ${{ runner.temp }}/sidik-sementara.txt
+        run: tools/cek-tanda-tangan.sh "$APK"
+
       - name: Unggah APK sebagai artefak
         uses: actions/upload-artifact@v6
         with:
-          name: mxm-daw-${{ github.sha }}-arm64-v8a
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          name: mxm-daw-arm64-v8a
+          path: ${{ env.APK }}
           retention-days: 14
           if-no-files-found: error
+
+  # Setiap merge ke main yang lulus semua job: pre-release preview-<build>
+  # berisi APK bertanda tangan kunci pratinjau + SHA-256 (rencana §13.4).
+  preview:
+    name: Pratinjau · terbitkan APK di Releases
+    needs: [engine, app, android]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.android.outputs.jenis_kunci == 'pemilik'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: mxm-daw-arm64-v8a
+
+      - name: Terbitkan pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOMOR: ${{ github.run_number }}
+        run: |
+          berkas="mxm-daw-preview-$NOMOR-arm64-v8a.apk"
+          mv app-pratinjau-release.apk "$berkas"
+          sha256sum "$berkas" >"$berkas.sha256"
+          cat "$berkas.sha256"
+          {
+            echo "APK pratinjau MXM-DAW, build $NOMOR, commit $GITHUB_SHA."
+            echo
+            echo "- Untuk HP Android 8.1+ arm64-v8a. ID: io.github.masalikovic.mxmdaw.preview"
+            echo "- Ditandatangani kunci pratinjau pemilik; sidik jari di tools/sidik-kunci-pratinjau.txt"
+            echo "- SHA-256: \`$(cut -d' ' -f1 "$berkas.sha256")\`"
+            echo
+            echo "Cara memasang: README.md, bagian \"Memasang di HP\"."
+          } >catatan.md
+          gh release create "preview-$NOMOR" "$berkas" "$berkas.sha256" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Pratinjau $NOMOR" --notes-file catatan.md
