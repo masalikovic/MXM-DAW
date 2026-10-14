@@ -197,7 +197,17 @@ name = "daw-ffi"
 version = "0.1.0"
 dependencies = [
  "daw-core",
+ "daw-io",
  "flutter_rust_bridge",
+ "hound",
+]
+
+[[package]]
+name = "daw-io"
+version = "0.1.0"
+dependencies = [
+ "daw-core",
+ "hound",
 ]
 
 [[package]]

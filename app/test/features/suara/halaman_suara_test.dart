@@ -3,12 +3,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mxmdaw/app/theme.dart';
 import 'package:mxmdaw/design_system/kenop.dart';
 import 'package:mxmdaw/design_system/tokens.dart';
+
+import 'dart:typed_data';
+
 import 'package:mxmdaw/engine/audio.dart';
+import 'package:mxmdaw/engine/berkas.dart';
 import 'package:mxmdaw/features/suara/halaman_suara.dart';
 
 import '../../beranda_test.dart' show MesinPalsu;
 
-Future<MesinPalsu> buka(WidgetTester tester) async {
+class PemilihPalsu implements PemilihBerkas {
+  PemilihPalsu(this.hasil);
+
+  final BerkasAudio? Function() hasil;
+
+  @override
+  Future<BerkasAudio?> pilihAudio() async => hasil();
+}
+
+Future<MesinPalsu> buka(WidgetTester tester, {PemilihBerkas? pemilih}) async {
   tester.view.physicalSize = const Size(1080, 2220);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -16,7 +29,12 @@ Future<MesinPalsu> buka(WidgetTester tester) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: mxmTheme(MxmTokens.light, Brightness.light),
-      home: HalamanSuara(audio: mesin, pad: 2, nama: 'CLAP'),
+      home: HalamanSuara(
+        audio: mesin,
+        pad: 2,
+        nama: 'CLAP',
+        pemilih: pemilih ?? PemilihPalsu(() => null),
+      ),
     ),
   );
   return mesin;
@@ -102,5 +120,52 @@ void main() {
     expect(mesin.ketukan.single.$1, 2);
     await jari.up();
     expect(mesin.lepasan, [2]);
+  });
+
+  testWidgets('impor WAV: nama pad dan panjang sampel diperbarui', (
+    tester,
+  ) async {
+    final mesin = await buka(
+      tester,
+      pemilih: PemilihPalsu(
+        () => BerkasAudio(nama: 'vokal.wav', isi: Uint8List(1234)),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('impor')));
+    await tester.pumpAndSettle();
+
+    expect(mesin.impor.single, (2, 'vokal.wav', 1234));
+    expect(find.text('A:03  VOKAL'), findsOneWidget);
+    expect(find.textContaining('/ 48000'), findsOneWidget);
+    expect(find.text('Diimpor: vokal.wav'), findsOneWidget);
+  });
+
+  testWidgets('impor dibatalkan: mesin tidak disentuh', (tester) async {
+    final mesin = await buka(tester);
+    await tester.tap(find.byKey(const ValueKey('impor')));
+    await tester.pumpAndSettle();
+
+    expect(mesin.impor, isEmpty);
+    expect(find.text('A:03  CLAP'), findsOneWidget);
+  });
+
+  testWidgets('impor gagal: pesan dari Rust tampil, halaman tetap hidup', (
+    tester,
+  ) async {
+    final mesin = await buka(
+      tester,
+      pemilih: PemilihPalsu(
+        () => BerkasAudio(nama: 'lagu.mp3', isi: Uint8List(10)),
+      ),
+    );
+    mesin.galatImpor = 'bukan berkas WAV yang bisa dibaca';
+    await tester.tap(find.byKey(const ValueKey('impor')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Impor gagal: bukan berkas WAV yang bisa dibaca'),
+      findsOneWidget,
+    );
+    expect(find.text('A:03  CLAP'), findsOneWidget);
   });
 }

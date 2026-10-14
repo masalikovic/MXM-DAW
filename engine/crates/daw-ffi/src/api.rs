@@ -284,6 +284,27 @@ pub fn pad_peaks(pad: u8, points: u32) -> Vec<f32> {
     })
 }
 
+/// Impor WAV ke pad `pad`. `file_name` dipakai untuk nama pad (huruf besar,
+/// maksimal 8 karakter). Byte dibaca Kotlin lewat Storage Access Framework,
+/// jadi aplikasi tidak butuh izin penyimpanan.
+///
+/// Tidak `sync`: membaca WAV besar bisa memakan puluhan milidetik, jadi
+/// dijalankan di thread pekerja, bukan thread UI.
+///
+/// # Errors
+/// Pesan yang bisa ditampilkan ke pengguna bila WAV tidak bisa dibaca.
+// flutter_rust_bridge meneruskan argumen Dart sebagai nilai milik sendiri.
+#[allow(clippy::needless_pass_by_value)]
+pub fn pad_import_wav(pad: u8, file_name: String, bytes: Vec<u8>) -> Result<PadSettings, String> {
+    let sampel = daw_io::decode_wav(&bytes)?;
+    drop(bytes);
+    let nama = daw_io::pad_name_from_file(&file_name);
+    if !crate::audio::atur_sampel(usize::from(pad), &nama, sampel) {
+        return Err("pad tidak ada atau mesin sibuk; coba lagi".to_owned());
+    }
+    pad_settings(pad).ok_or_else(|| "pad tidak ada".to_owned())
+}
+
 /// Angka kesehatan mesin saat ini.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]

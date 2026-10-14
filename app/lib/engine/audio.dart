@@ -42,6 +42,9 @@ abstract interface class MesinAudio {
 
   /// Ringkasan gelombang: `titik` pasangan (min, max) berurutan.
   Float32List puncak(int pad, int titik);
+
+  /// Impor WAV ke pad. Melempar pesan galat (teks) bila WAV tidak bisa dibaca.
+  Future<rust.PadSettings> imporWav(int pad, String namaBerkas, Uint8List isi);
 }
 
 /// Mesin sungguhan: Rust lewat flutter_rust_bridge, lalu Oboe (ADR-0003).
@@ -83,6 +86,13 @@ class MesinAudioRust implements MesinAudio {
   @override
   Float32List puncak(int pad, int titik) =>
       rust.padPeaks(pad: pad, points: titik);
+
+  @override
+  Future<rust.PadSettings> imporWav(
+    int pad,
+    String namaBerkas,
+    Uint8List isi,
+  ) => rust.padImportWav(pad: pad, fileName: namaBerkas, bytes: isi);
 }
 
 /// Salinan [rust.PadSettings] dengan sebagian nilai diganti.

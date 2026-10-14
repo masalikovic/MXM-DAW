@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../design_system/kenop.dart';
 import '../../design_system/tokens.dart';
 import '../../engine/audio.dart';
+import '../../engine/berkas.dart';
 import 'gelombang.dart';
 import 'pemetaan.dart';
 
@@ -19,12 +20,14 @@ class HalamanSuara extends StatefulWidget {
     required this.audio,
     required this.pad,
     required this.nama,
+    this.pemilih = const PemilihBerkasAndroid(),
     super.key,
   });
 
   final MesinAudio audio;
   final int pad;
   final String nama;
+  final PemilihBerkas pemilih;
 
   @override
   State<HalamanSuara> createState() => _HalamanSuaraState();
@@ -32,15 +35,42 @@ class HalamanSuara extends StatefulWidget {
 
 class _HalamanSuaraState extends State<HalamanSuara> {
   late PadSettings _p;
-  late final int _frames;
-  late final Float32List _puncak;
+  late int _frames;
+  late Float32List _puncak;
+  late String _nama;
+  bool _mengimpor = false;
 
   @override
   void initState() {
     super.initState();
+    _nama = widget.nama;
+    _muatSampel();
+  }
+
+  void _muatSampel() {
     _p = widget.audio.pengaturan(widget.pad)!;
     _frames = widget.audio.infoSampel(widget.pad).$1;
     _puncak = widget.audio.puncak(widget.pad, Gelombang.titik);
+  }
+
+  Future<void> _impor() async {
+    final pesan = ScaffoldMessenger.of(context);
+    setState(() => _mengimpor = true);
+    try {
+      final berkas = await widget.pemilih.pilihAudio();
+      if (berkas == null) return;
+      await widget.audio.imporWav(widget.pad, berkas.nama, berkas.isi);
+      if (!mounted) return;
+      setState(() {
+        _muatSampel();
+        _nama = widget.audio.namaPad()[widget.pad];
+      });
+      pesan.showSnackBar(SnackBar(content: Text('Diimpor: ${berkas.nama}')));
+    } on Object catch (galat) {
+      pesan.showSnackBar(SnackBar(content: Text('Impor gagal: $galat')));
+    } finally {
+      if (mounted) setState(() => _mengimpor = false);
+    }
   }
 
   void _ubah(PadSettings baru) {
@@ -60,15 +90,22 @@ class _HalamanSuaraState extends State<HalamanSuara> {
     );
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'A:${(widget.pad + 1).toString().padLeft(2, '0')}  ${widget.nama}',
-        ),
+        title: Text('A:${(widget.pad + 1).toString().padLeft(2, '0')}  $_nama'),
+        actions: [
+          TextButton.icon(
+            key: const ValueKey('impor'),
+            onPressed: _mengimpor ? null : _impor,
+            icon: const Icon(Icons.file_open_outlined),
+            label: const Text('IMPOR WAV'),
+          ),
+        ],
       ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             Gelombang(
+              key: ValueKey(_puncak),
               puncak: _puncak,
               frames: _frames,
               start: _p.start,
