@@ -13,8 +13,17 @@ abstract interface class MesinAudio {
   /// Tutup stream audio (mis. saat aplikasi ke latar, ADR-0009 butir 4).
   Future<void> berhenti();
 
-  /// Pad ditekan. `false` bila mesin belum berjalan.
-  bool ketuk(double velocity);
+  /// Pad `pad` (0..15) ditekan. `false` bila mesin belum berjalan.
+  bool ketuk(int pad, double velocity);
+
+  /// Pad `pad` dilepas (mode gate dan loop berhenti).
+  bool lepas(int pad);
+
+  /// Bit ke-`n` menyala bila pad `n` sedang berbunyi (untuk LED).
+  int padBerbunyi();
+
+  /// Nama suara ke-16 pad.
+  List<String> namaPad();
 
   /// Angka kesehatan mesin saat ini.
   rust.AudioHealth kesehatan();
@@ -31,7 +40,17 @@ class MesinAudioRust implements MesinAudio {
   Future<void> berhenti() => rust.audioStop();
 
   @override
-  bool ketuk(double velocity) => rust.padHit(velocity: velocity);
+  bool ketuk(int pad, double velocity) =>
+      rust.padHit(pad: pad, velocity: velocity);
+
+  @override
+  bool lepas(int pad) => rust.padRelease(pad: pad);
+
+  @override
+  int padBerbunyi() => rust.padsSounding();
+
+  @override
+  List<String> namaPad() => rust.padNames();
 
   @override
   rust.AudioHealth kesehatan() => rust.audioHealth();

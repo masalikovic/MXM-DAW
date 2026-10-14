@@ -22,6 +22,12 @@ use crate::sampel::Sampel;
 pub const KIT_SAMPLE_RATE: u32 = 48_000;
 const SR: f32 = 48_000.0;
 
+/// Nama ke-16 suara kit pabrik, urut pad 1..16.
+pub const FACTORY_NAMES: [&str; PAD_COUNT] = [
+    "KICK", "SNARE", "CLAP", "HAT-T", "HAT-B", "RIM", "TOM-R", "TOM-S", "TOM-T", "COWBELL",
+    "SHAKER", "CRASH", "SUB", "BAS", "BLIP", "ZAP",
+];
+
 /// Satu suara kit: nama pendek (untuk layar segmen), sampel, parameter awal.
 #[derive(Debug, Clone)]
 pub struct KitSound {
@@ -323,8 +329,11 @@ mod tests {
     }
 
     #[test]
-    fn nama_unik() {
+    fn nama_unik_dan_sama_dengan_daftar() {
         let kit = factory_kit();
+        for (s, nama) in kit.iter().zip(super::FACTORY_NAMES) {
+            assert_eq!(s.name, nama);
+        }
         for (i, a) in kit.iter().enumerate() {
             assert!(kit[i + 1..].iter().all(|b| b.name != a.name), "{}", a.name);
         }
