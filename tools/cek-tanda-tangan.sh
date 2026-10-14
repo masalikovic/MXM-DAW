@@ -46,7 +46,7 @@ if [ -z "$harapan" ]; then
   exit 1
 fi
 if [ "$sidik_apk" = "$harapan" ]; then
-  echo "ok   : APK ditandatangani kunci pratinjau pemilik ($sidik_apk)"
+  echo "ok   : sidik jari penanda tangan APK cocok dengan $(basename "$berkas_sidik") ($sidik_apk)"
 else
   echo "GAGAL: APK ditandatangani kunci lain."
   echo "       diharapkan: $harapan"
