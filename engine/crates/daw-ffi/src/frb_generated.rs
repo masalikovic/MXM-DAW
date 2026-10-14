@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 2046569533;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1034556170;
 
 // Section: executor
 
@@ -231,6 +231,37 @@ fn wire__crate__api__pad_names_impl(
         },
     )
 }
+fn wire__crate__api__pad_peaks_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pad_peaks",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pad = <u8>::sse_decode(&mut deserializer);
+            let api_points = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::pad_peaks(api_pad, api_points))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__pad_release_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -261,6 +292,66 @@ fn wire__crate__api__pad_release_impl(
         },
     )
 }
+fn wire__crate__api__pad_sample_info_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pad_sample_info",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pad = <u8>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::pad_sample_info(api_pad))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__pad_settings_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pad_settings",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pad = <u8>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::pad_settings(api_pad))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__pads_sounding_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -285,6 +376,37 @@ fn wire__crate__api__pads_sounding_impl(
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Ok::<_, ()>(crate::api::pads_sounding())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__set_pad_settings_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_pad_settings",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pad = <u8>::sse_decode(&mut deserializer);
+            let api_settings = <crate::api::PadSettings>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::set_pad_settings(api_pad, api_settings))?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -358,6 +480,20 @@ impl SseDecode for f64 {
     }
 }
 
+impl SseDecode for crate::api::FilterKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::FilterKind::Off,
+            1 => crate::api::FilterKind::LowPass,
+            2 => crate::api::FilterKind::HighPass,
+            3 => crate::api::FilterKind::BandPass,
+            _ => unreachable!("Invalid variant for FilterKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -377,6 +513,18 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<f32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<f32>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -386,6 +534,77 @@ impl SseDecode for Vec<u8> {
             ans_.push(<u8>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for Option<crate::api::PadSettings> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::PadSettings>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for crate::api::PadSettings {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_level = <f32>::sse_decode(deserializer);
+        let mut var_pan = <f32>::sse_decode(deserializer);
+        let mut var_pitch = <f32>::sse_decode(deserializer);
+        let mut var_start = <u32>::sse_decode(deserializer);
+        let mut var_end = <u32>::sse_decode(deserializer);
+        let mut var_attack = <f32>::sse_decode(deserializer);
+        let mut var_decay = <f32>::sse_decode(deserializer);
+        let mut var_sustain = <f32>::sse_decode(deserializer);
+        let mut var_release = <f32>::sse_decode(deserializer);
+        let mut var_filter = <crate::api::FilterKind>::sse_decode(deserializer);
+        let mut var_cutoff = <f32>::sse_decode(deserializer);
+        let mut var_resonance = <f32>::sse_decode(deserializer);
+        let mut var_drive = <f32>::sse_decode(deserializer);
+        let mut var_play = <crate::api::PlayKind>::sse_decode(deserializer);
+        let mut var_choke = <u8>::sse_decode(deserializer);
+        return crate::api::PadSettings {
+            level: var_level,
+            pan: var_pan,
+            pitch: var_pitch,
+            start: var_start,
+            end: var_end,
+            attack: var_attack,
+            decay: var_decay,
+            sustain: var_sustain,
+            release: var_release,
+            filter: var_filter,
+            cutoff: var_cutoff,
+            resonance: var_resonance,
+            drive: var_drive,
+            play: var_play,
+            choke: var_choke,
+        };
+    }
+}
+
+impl SseDecode for crate::api::PlayKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::PlayKind::OneShot,
+            1 => crate::api::PlayKind::Gate,
+            2 => crate::api::PlayKind::Loop,
+            _ => unreachable!("Invalid variant for PlayKind: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for (u32, u32) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_field0 = <u32>::sse_decode(deserializer);
+        let mut var_field1 = <u32>::sse_decode(deserializer);
+        return (var_field0, var_field1);
     }
 }
 
@@ -435,8 +654,12 @@ fn pde_ffi_dispatcher_sync_impl(
         4 => wire__crate__api__engine_version_impl(ptr, rust_vec_len, data_len),
         5 => wire__crate__api__pad_hit_impl(ptr, rust_vec_len, data_len),
         6 => wire__crate__api__pad_names_impl(ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__pad_release_impl(ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__pads_sounding_impl(ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__pad_peaks_impl(ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__pad_release_impl(ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__pad_sample_info_impl(ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__pad_settings_impl(ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__pads_sounding_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__set_pad_settings_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -468,6 +691,70 @@ impl flutter_rust_bridge::IntoDart for crate::api::AudioHealth {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::AudioHealth {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::AudioHealth> for crate::api::AudioHealth {
     fn into_into_dart(self) -> crate::api::AudioHealth {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::FilterKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Off => 0.into_dart(),
+            Self::LowPass => 1.into_dart(),
+            Self::HighPass => 2.into_dart(),
+            Self::BandPass => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::FilterKind {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::FilterKind> for crate::api::FilterKind {
+    fn into_into_dart(self) -> crate::api::FilterKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::PadSettings {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.level.into_into_dart().into_dart(),
+            self.pan.into_into_dart().into_dart(),
+            self.pitch.into_into_dart().into_dart(),
+            self.start.into_into_dart().into_dart(),
+            self.end.into_into_dart().into_dart(),
+            self.attack.into_into_dart().into_dart(),
+            self.decay.into_into_dart().into_dart(),
+            self.sustain.into_into_dart().into_dart(),
+            self.release.into_into_dart().into_dart(),
+            self.filter.into_into_dart().into_dart(),
+            self.cutoff.into_into_dart().into_dart(),
+            self.resonance.into_into_dart().into_dart(),
+            self.drive.into_into_dart().into_dart(),
+            self.play.into_into_dart().into_dart(),
+            self.choke.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::PadSettings {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::PadSettings> for crate::api::PadSettings {
+    fn into_into_dart(self) -> crate::api::PadSettings {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::PlayKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::OneShot => 0.into_dart(),
+            Self::Gate => 1.into_dart(),
+            Self::Loop => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::PlayKind {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::PlayKind> for crate::api::PlayKind {
+    fn into_into_dart(self) -> crate::api::PlayKind {
         self
     }
 }
@@ -520,6 +807,24 @@ impl SseEncode for f64 {
     }
 }
 
+impl SseEncode for crate::api::FilterKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::FilterKind::Off => 0,
+                crate::api::FilterKind::LowPass => 1,
+                crate::api::FilterKind::HighPass => 2,
+                crate::api::FilterKind::BandPass => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -537,6 +842,16 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<f32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <f32>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -544,6 +859,62 @@ impl SseEncode for Vec<u8> {
         for item in self {
             <u8>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for Option<crate::api::PadSettings> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::PadSettings>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::PadSettings {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f32>::sse_encode(self.level, serializer);
+        <f32>::sse_encode(self.pan, serializer);
+        <f32>::sse_encode(self.pitch, serializer);
+        <u32>::sse_encode(self.start, serializer);
+        <u32>::sse_encode(self.end, serializer);
+        <f32>::sse_encode(self.attack, serializer);
+        <f32>::sse_encode(self.decay, serializer);
+        <f32>::sse_encode(self.sustain, serializer);
+        <f32>::sse_encode(self.release, serializer);
+        <crate::api::FilterKind>::sse_encode(self.filter, serializer);
+        <f32>::sse_encode(self.cutoff, serializer);
+        <f32>::sse_encode(self.resonance, serializer);
+        <f32>::sse_encode(self.drive, serializer);
+        <crate::api::PlayKind>::sse_encode(self.play, serializer);
+        <u8>::sse_encode(self.choke, serializer);
+    }
+}
+
+impl SseEncode for crate::api::PlayKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::PlayKind::OneShot => 0,
+                crate::api::PlayKind::Gate => 1,
+                crate::api::PlayKind::Loop => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for (u32, u32) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.0, serializer);
+        <u32>::sse_encode(self.1, serializer);
     }
 }
 

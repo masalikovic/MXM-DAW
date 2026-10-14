@@ -6,6 +6,7 @@ import '../design_system/tokens.dart';
 import '../engine/audio.dart';
 import '../engine/engine.dart';
 import 'pad_grid.dart';
+import 'suara/halaman_suara.dart';
 
 /// Layar M2: versi mesin, panel kesehatan mesin, dan 16 pad kit pabrik.
 class Beranda extends StatefulWidget {
@@ -90,6 +91,23 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     setState(() => _kesehatan = audio.kesehatan());
   }
 
+  void _bukaSuara(int pad) {
+    final audio = widget.audio!;
+    // Pad yang ditahan dilepas dulu, supaya mode gate/loop tidak terus berbunyi.
+    audio.lepas(pad);
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => HalamanSuara(
+            audio: audio,
+            pad: pad,
+            nama: pad < _nama.length ? _nama[pad] : '',
+          ),
+        ),
+      ),
+    );
+  }
+
   void _segarkanLed() {
     final audio = widget.audio;
     if (audio == null || !mounted) return;
@@ -136,6 +154,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                   berbunyi: _berbunyi,
                   onKetuk: (pad, v) => widget.audio?.ketuk(pad, v),
                   onLepas: (pad) => widget.audio?.lepas(pad),
+                  onTahan: widget.audio == null ? null : _bukaSuara,
                 ),
               ),
               const Spacer(),

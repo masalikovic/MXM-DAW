@@ -11,15 +11,19 @@ use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use daw_core::bank::PadBank;
 use daw_core::engine::{Engine, EngineStats, EventSender};
-use daw_core::kit::FACTORY_NAMES;
-use daw_core::pad::PAD_COUNT;
+use daw_core::pad::PadParams;
+use daw_core::sampel::Sampel;
 
 /// Sample rate mesin; adapter meminta Oboe mengonversi bila perangkat berbeda.
 pub(crate) const SAMPLE_RATE: u32 = 48_000;
 
 static MESIN: AtomicPtr<Engine> = AtomicPtr::new(ptr::null_mut());
 static SISI_UI: Mutex<Option<SisiUi>> = Mutex::new(None);
+/// Model 16 pad saat mesin tidak berjalan (mis. aplikasi di latar). Urutan
+/// kunci selalu `SISI_UI` lalu `BANK`.
+static BANK: Mutex<Option<PadBank>> = Mutex::new(None);
 
 struct SisiUi {
     pengirim: EventSender,
@@ -54,7 +58,13 @@ pub unsafe extern "C" fn mxm_engine_render(out: *mut f32, frames: i32, channels:
 
 /// Buat mesin baru dan pasang untuk thread audio. Mengganti mesin lama.
 pub(crate) fn pasang_mesin() {
-    let (mesin, pengirim) = Engine::new(SAMPLE_RATE);
+    let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    let bank = match ui.take() {
+        Some(lama) => lama.pengirim.into_bank(),
+        None => kunci_bank().take().unwrap_or_else(PadBank::factory),
+    };
+    drop(ui);
+    let (mesin, pengirim) = Engine::with_bank(SAMPLE_RATE, bank);
     let stats = Arc::clone(pengirim.stats());
     let lama = MESIN.swap(Box::into_raw(Box::new(mesin)), Ordering::AcqRel);
     *SISI_UI.lock().unwrap_or_else(PoisonError::into_inner) = Some(SisiUi { pengirim, stats });
@@ -62,10 +72,57 @@ pub(crate) fn pasang_mesin() {
 }
 
 /// Lepas mesin. Hanya boleh dipanggil saat tidak ada callback audio berjalan.
+/// Model tetap disimpan, supaya mesin berikutnya memainkan isi yang sama.
 pub(crate) fn lepas_mesin() {
     let lama = MESIN.swap(ptr::null_mut(), Ordering::AcqRel);
-    *SISI_UI.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    let ui = SISI_UI
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    if let Some(ui) = ui {
+        *kunci_bank() = Some(ui.pengirim.into_bank());
+    }
     bebaskan(lama);
+}
+
+fn kunci_bank() -> std::sync::MutexGuard<'static, Option<PadBank>> {
+    BANK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Baca model: dari mesin yang berjalan, atau dari bank yang disimpan.
+pub(crate) fn baca<R>(f: impl FnOnce(&PadBank) -> R) -> R {
+    let ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_ref() {
+        return f(ui.pengirim.bank());
+    }
+    let mut bank = kunci_bank();
+    f(bank.get_or_insert_with(PadBank::factory))
+}
+
+/// Ubah parameter pad. Saat mesin berjalan, perubahan langsung terdengar.
+pub(crate) fn atur_pad(pad: usize, params: &PadParams) -> bool {
+    let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_mut() {
+        return ui.pengirim.set_pad(pad, params);
+    }
+    let mut bank = kunci_bank();
+    bank.get_or_insert_with(PadBank::factory)
+        .set_params(pad, params)
+        .is_some()
+}
+
+/// Ganti sampel pad.
+// Dipakai impor WAV di langkah 4; sementara ini hanya oleh tes.
+#[allow(dead_code)]
+pub(crate) fn atur_sampel(pad: usize, nama: &str, sampel: Sampel) -> bool {
+    let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_mut() {
+        return ui.pengirim.set_sample(pad, nama, sampel);
+    }
+    let mut bank = kunci_bank();
+    bank.get_or_insert_with(PadBank::factory)
+        .set_sample(pad, nama, std::sync::Arc::new(sampel))
+        .is_some()
 }
 
 fn bebaskan(mesin: *mut Engine) {
@@ -104,18 +161,13 @@ pub(crate) fn pad_berbunyi() -> u32 {
         .map_or(0, |ui| ui.stats.pads_sounding())
 }
 
-/// Nama suara pad; nama kit pabrik bila mesin belum berjalan.
+/// Nama suara ke-16 pad.
 pub(crate) fn nama_pad() -> Vec<String> {
-    let kunci = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
-    (0..PAD_COUNT)
-        .map(|i| {
-            kunci
-                .as_ref()
-                .and_then(|ui| ui.pengirim.name(i))
-                .unwrap_or(FACTORY_NAMES[i])
-                .to_owned()
-        })
-        .collect()
+    baca(|b| {
+        (0..daw_core::pad::PAD_COUNT)
+            .map(|i| b.name(i).unwrap_or_default().to_owned())
+            .collect()
+    })
 }
 
 /// Statistik mesin: (suara aktif, ketukan dimainkan, ketukan dibuang).
@@ -206,8 +258,8 @@ pub(crate) use adapter::{berhenti, kesehatan, mulai};
 #[cfg(test)]
 mod tests {
     use super::{
-        ketuk, lepas, lepas_mesin, mxm_engine_render, nama_pad, pad_berbunyi, pasang_mesin,
-        statistik,
+        Sampel, atur_pad, atur_sampel, baca, ketuk, lepas, lepas_mesin, mxm_engine_render,
+        nama_pad, pad_berbunyi, pasang_mesin, statistik,
     };
 
     fn render(frames: usize) -> Vec<f32> {
@@ -241,8 +293,22 @@ mod tests {
         assert!(lepas(13));
         assert_eq!(nama_pad().len(), 16);
 
+        // Suntingan saat berjalan bertahan setelah mesin dilepas dan dipasang lagi.
+        let mut p = baca(|b| *b.params(3).unwrap());
+        p.pitch = 5.0;
+        assert!(atur_pad(3, &p));
         lepas_mesin();
         assert!(!ketuk(0, 1.0));
         assert!(render(64).iter().all(|&v| v == 0.0));
+        assert!((baca(|b| b.params(3).unwrap().pitch) - 5.0).abs() < f32::EPSILON);
+        assert!(atur_sampel(
+            4,
+            "BARU",
+            Sampel::from_f32(&[0.5; 480], 1, 48_000)
+        ));
+        pasang_mesin();
+        assert_eq!(nama_pad()[4], "BARU");
+        assert!((baca(|b| b.params(3).unwrap().pitch) - 5.0).abs() < f32::EPSILON);
+        lepas_mesin();
     }
 }

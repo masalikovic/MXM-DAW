@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../design_system/tokens.dart';
@@ -11,10 +13,14 @@ class KisiPad extends StatelessWidget {
     required this.berbunyi,
     required this.onKetuk,
     required this.onLepas,
+    this.onTahan,
     super.key,
   });
 
   final bool aktif;
+
+  /// Pad ditekan lama: buka halaman Sound (rencana §7).
+  final ValueChanged<int>? onTahan;
 
   /// Nama suara ke-16 pad.
   final List<String> nama;
@@ -69,6 +75,7 @@ class KisiPad extends StatelessWidget {
     ledMenyala: berbunyi & (1 << i) != 0,
     onKetuk: (v) => onKetuk(i, v),
     onLepas: () => onLepas(i),
+    onTahan: onTahan == null ? null : () => onTahan!(i),
   );
 }
 
@@ -85,8 +92,12 @@ class Pad extends StatefulWidget {
     required this.ledMenyala,
     required this.onKetuk,
     required this.onLepas,
+    this.onTahan,
     super.key,
   });
+
+  /// Lama tekan untuk membuka halaman Sound.
+  static const lamaTahan = Duration(milliseconds: 500);
 
   final int nomor;
   final String nama;
@@ -95,6 +106,7 @@ class Pad extends StatefulWidget {
   final bool ledMenyala;
   final ValueChanged<double> onKetuk;
   final VoidCallback onLepas;
+  final VoidCallback? onTahan;
 
   @override
   State<Pad> createState() => _PadState();
@@ -103,6 +115,13 @@ class Pad extends StatefulWidget {
 class _PadState extends State<Pad> {
   /// Jari yang sedang menekan pad ini.
   final _jari = <int>{};
+  Timer? _tahan;
+
+  @override
+  void dispose() {
+    _tahan?.cancel();
+    super.dispose();
+  }
 
   void _turun(PointerDownEvent e) {
     final velocity = (1.0 - 0.6 * (e.localPosition.dy / widget.ukuran)).clamp(
@@ -111,12 +130,19 @@ class _PadState extends State<Pad> {
     );
     widget.onKetuk(velocity);
     setState(() => _jari.add(e.pointer));
+    final onTahan = widget.onTahan;
+    if (onTahan != null && _jari.length == 1) {
+      _tahan = Timer(Pad.lamaTahan, onTahan);
+    }
   }
 
   void _naik(PointerEvent e) {
     if (!_jari.remove(e.pointer)) return;
     // Lepas hanya saat jari terakhir diangkat.
-    if (_jari.isEmpty) widget.onLepas();
+    if (_jari.isEmpty) {
+      _tahan?.cancel();
+      widget.onLepas();
+    }
     setState(() {});
   }
 

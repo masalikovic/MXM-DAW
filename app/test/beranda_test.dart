@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mxmdaw/engine/audio.dart';
@@ -42,6 +44,26 @@ class MesinPalsu implements MesinAudio {
   @override
   List<String> namaPad() => [for (var i = 1; i <= 16; i++) 'SUARA$i'];
 
+  final pengaturanPad = List.filled(16, pengaturanBawaan);
+  final perubahan = <(int, PadSettings)>[];
+
+  @override
+  PadSettings? pengaturan(int pad) => pengaturanPad[pad];
+
+  @override
+  PadSettings? aturPengaturan(int pad, PadSettings nilai) {
+    perubahan.add((pad, nilai));
+    return pengaturanPad[pad] = nilai;
+  }
+
+  @override
+  (int, int) infoSampel(int pad) => (48000, 48000);
+
+  @override
+  Float32List puncak(int pad, int titik) => Float32List.fromList([
+    for (var i = 0; i < titik; i++) ...[-0.5, 0.5],
+  ]);
+
   @override
   AudioHealth kesehatan() => const AudioHealth(
     running: true,
@@ -60,6 +82,24 @@ class MesinPalsu implements MesinAudio {
     hitsDropped: 0,
   );
 }
+
+const pengaturanBawaan = PadSettings(
+  level: 1,
+  pan: 0,
+  pitch: 0,
+  start: 0,
+  end: 48000,
+  attack: 0.001,
+  decay: 0,
+  sustain: 1,
+  release: 0.02,
+  filter: FilterKind.off,
+  cutoff: 1,
+  resonance: 0,
+  drive: 0,
+  play: PlayKind.oneShot,
+  choke: 0,
+);
 
 Future<MesinPalsu> pasang(WidgetTester tester, {Object? galatMulai}) async {
   // Layar HP kecil (360 × 740 dp), seperti Redmi 13C.
@@ -162,6 +202,28 @@ void main() {
     mesin.berbunyi = 0;
     await tester.pump(const Duration(milliseconds: 40));
     expect(warnaLed(2), padam);
+  });
+
+  testWidgets('tekan lama pad membuka halaman Sound pad itu', (tester) async {
+    final mesin = await pasang(tester);
+    final pad = tester.getCenter(find.byKey(const ValueKey('pad-6')));
+
+    final jari = await tester.startGesture(pad);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    await jari.up();
+
+    expect(find.text('A:07  SUARA7'), findsOneWidget);
+    expect(mesin.lepasan, contains(6), reason: 'pad dilepas sebelum pindah');
+  });
+
+  testWidgets('ketukan singkat tidak membuka halaman Sound', (tester) async {
+    await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('pad-6')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+
+    expect(find.text('A:07  SUARA7'), findsNothing);
   });
 
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (

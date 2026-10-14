@@ -7,6 +7,8 @@ import 'frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
+
 /// Versi mesin, mis. `"0.1.0"`.
 ///
 /// Ditandai `sync`: Dart memanggilnya langsung di thread UI tanpa menunggu
@@ -41,6 +43,26 @@ int padsSounding() => RustLib.instance.api.crateApiPadsSounding();
 
 /// Nama suara ke-16 pad, mis. `"KICK"`.
 List<String> padNames() => RustLib.instance.api.crateApiPadNames();
+
+/// Parameter pad saat ini, atau `None` bila nomor pad salah.
+PadSettings? padSettings({required int pad}) =>
+    RustLib.instance.api.crateApiPadSettings(pad: pad);
+
+/// Simpan parameter pad (nilai dibatasi ke jangkauan sah). Langsung terdengar
+/// bila mesin berjalan. Mengembalikan nilai yang benar-benar tersimpan.
+PadSettings? setPadSettings({
+  required int pad,
+  required PadSettings settings,
+}) => RustLib.instance.api.crateApiSetPadSettings(pad: pad, settings: settings);
+
+/// Panjang sampel pad (frame) dan sample rate-nya; (0, 0) bila kosong.
+(int, int) padSampleInfo({required int pad}) =>
+    RustLib.instance.api.crateApiPadSampleInfo(pad: pad);
+
+/// Ringkasan gelombang sampel pad: `points` pasangan (min, max) berurutan
+/// `[min0, max0, min1, max1, …]`, untuk digambar sekali lalu disimpan.
+Float32List padPeaks({required int pad, required int points}) =>
+    RustLib.instance.api.crateApiPadPeaks(pad: pad, points: points);
 
 /// Angka kesehatan mesin saat ini.
 AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
@@ -144,4 +166,136 @@ class AudioHealth {
           voicesActive == other.voicesActive &&
           hitsPlayed == other.hitsPlayed &&
           hitsDropped == other.hitsDropped;
+}
+
+/// Jenis filter (cermin `daw_core::pad::FilterMode`).
+enum FilterKind {
+  /// Tanpa filter.
+  off,
+
+  /// Low-pass.
+  lowPass,
+
+  /// High-pass.
+  highPass,
+
+  /// Band-pass.
+  bandPass,
+}
+
+/// Parameter satu pad untuk layar Sound. Satuan sama dengan rencana §10.
+class PadSettings {
+  /// Level 0..1.
+  final double level;
+
+  /// Pan −1..1.
+  final double pan;
+
+  /// Pitch dalam semitone (−24..24), pecahan = cent.
+  final double pitch;
+
+  /// Frame awal.
+  final int start;
+
+  /// Frame akhir (eksklusif).
+  final int end;
+
+  /// Attack (detik).
+  final double attack;
+
+  /// Decay (detik).
+  final double decay;
+
+  /// Sustain 0..1.
+  final double sustain;
+
+  /// Release (detik).
+  final double release;
+
+  /// Jenis filter.
+  final FilterKind filter;
+
+  /// Cutoff 0..1 (20 Hz … 20 kHz).
+  final double cutoff;
+
+  /// Resonansi 0..1.
+  final double resonance;
+
+  /// Drive 0..1.
+  final double drive;
+
+  /// Cara main.
+  final PlayKind play;
+
+  /// Choke group 1..=8, atau 0.
+  final int choke;
+
+  const PadSettings({
+    required this.level,
+    required this.pan,
+    required this.pitch,
+    required this.start,
+    required this.end,
+    required this.attack,
+    required this.decay,
+    required this.sustain,
+    required this.release,
+    required this.filter,
+    required this.cutoff,
+    required this.resonance,
+    required this.drive,
+    required this.play,
+    required this.choke,
+  });
+
+  @override
+  int get hashCode =>
+      level.hashCode ^
+      pan.hashCode ^
+      pitch.hashCode ^
+      start.hashCode ^
+      end.hashCode ^
+      attack.hashCode ^
+      decay.hashCode ^
+      sustain.hashCode ^
+      release.hashCode ^
+      filter.hashCode ^
+      cutoff.hashCode ^
+      resonance.hashCode ^
+      drive.hashCode ^
+      play.hashCode ^
+      choke.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PadSettings &&
+          runtimeType == other.runtimeType &&
+          level == other.level &&
+          pan == other.pan &&
+          pitch == other.pitch &&
+          start == other.start &&
+          end == other.end &&
+          attack == other.attack &&
+          decay == other.decay &&
+          sustain == other.sustain &&
+          release == other.release &&
+          filter == other.filter &&
+          cutoff == other.cutoff &&
+          resonance == other.resonance &&
+          drive == other.drive &&
+          play == other.play &&
+          choke == other.choke;
+}
+
+/// Cara pad dimainkan (cermin `daw_core::pad::PlayMode`).
+enum PlayKind {
+  /// Berbunyi sampai selesai walau dilepas.
+  oneShot,
+
+  /// Berbunyi selama ditekan.
+  gate,
+
+  /// Mengulang selama ditekan.
+  loop,
 }

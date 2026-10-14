@@ -106,6 +106,184 @@ pub fn pad_names() -> Vec<String> {
     crate::audio::nama_pad()
 }
 
+/// Cara pad dimainkan (cermin `daw_core::pad::PlayMode`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayKind {
+    /// Berbunyi sampai selesai walau dilepas.
+    OneShot,
+    /// Berbunyi selama ditekan.
+    Gate,
+    /// Mengulang selama ditekan.
+    Loop,
+}
+
+/// Jenis filter (cermin `daw_core::pad::FilterMode`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterKind {
+    /// Tanpa filter.
+    Off,
+    /// Low-pass.
+    LowPass,
+    /// High-pass.
+    HighPass,
+    /// Band-pass.
+    BandPass,
+}
+
+/// Parameter satu pad untuk layar Sound. Satuan sama dengan rencana §10.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PadSettings {
+    /// Level 0..1.
+    pub level: f32,
+    /// Pan −1..1.
+    pub pan: f32,
+    /// Pitch dalam semitone (−24..24), pecahan = cent.
+    pub pitch: f32,
+    /// Frame awal.
+    pub start: u32,
+    /// Frame akhir (eksklusif).
+    pub end: u32,
+    /// Attack (detik).
+    pub attack: f32,
+    /// Decay (detik).
+    pub decay: f32,
+    /// Sustain 0..1.
+    pub sustain: f32,
+    /// Release (detik).
+    pub release: f32,
+    /// Jenis filter.
+    pub filter: FilterKind,
+    /// Cutoff 0..1 (20 Hz … 20 kHz).
+    pub cutoff: f32,
+    /// Resonansi 0..1.
+    pub resonance: f32,
+    /// Drive 0..1.
+    pub drive: f32,
+    /// Cara main.
+    pub play: PlayKind,
+    /// Choke group 1..=8, atau 0.
+    pub choke: u8,
+}
+
+impl From<&daw_core::pad::PadParams> for PadSettings {
+    fn from(p: &daw_core::pad::PadParams) -> Self {
+        use daw_core::pad::{FilterMode, PlayMode};
+        Self {
+            level: p.level,
+            pan: p.pan,
+            pitch: p.pitch,
+            start: p.start,
+            end: p.end,
+            attack: p.envelope.attack,
+            decay: p.envelope.decay,
+            sustain: p.envelope.sustain,
+            release: p.envelope.release,
+            filter: match p.filter.mode {
+                FilterMode::Off => FilterKind::Off,
+                FilterMode::LowPass => FilterKind::LowPass,
+                FilterMode::HighPass => FilterKind::HighPass,
+                FilterMode::BandPass => FilterKind::BandPass,
+            },
+            cutoff: p.filter.cutoff,
+            resonance: p.filter.resonance,
+            drive: p.drive,
+            play: match p.play_mode {
+                PlayMode::OneShot => PlayKind::OneShot,
+                PlayMode::Gate => PlayKind::Gate,
+                PlayMode::Loop => PlayKind::Loop,
+            },
+            choke: p.choke,
+        }
+    }
+}
+
+impl From<&PadSettings> for daw_core::pad::PadParams {
+    fn from(s: &PadSettings) -> Self {
+        use daw_core::pad::{Envelope, Filter, FilterMode, PlayMode};
+        Self {
+            level: s.level,
+            pan: s.pan,
+            pitch: s.pitch,
+            start: s.start,
+            end: s.end,
+            envelope: Envelope {
+                attack: s.attack,
+                decay: s.decay,
+                sustain: s.sustain,
+                release: s.release,
+            },
+            filter: Filter {
+                mode: match s.filter {
+                    FilterKind::Off => FilterMode::Off,
+                    FilterKind::LowPass => FilterMode::LowPass,
+                    FilterKind::HighPass => FilterMode::HighPass,
+                    FilterKind::BandPass => FilterMode::BandPass,
+                },
+                cutoff: s.cutoff,
+                resonance: s.resonance,
+            },
+            drive: s.drive,
+            play_mode: match s.play {
+                PlayKind::OneShot => PlayMode::OneShot,
+                PlayKind::Gate => PlayMode::Gate,
+                PlayKind::Loop => PlayMode::Loop,
+            },
+            choke: s.choke,
+        }
+    }
+}
+
+/// Parameter pad saat ini, atau `None` bila nomor pad salah.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pad_settings(pad: u8) -> Option<PadSettings> {
+    crate::audio::baca(|b| b.params(usize::from(pad)).map(PadSettings::from))
+}
+
+/// Simpan parameter pad (nilai dibatasi ke jangkauan sah). Langsung terdengar
+/// bila mesin berjalan. Mengembalikan nilai yang benar-benar tersimpan.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn set_pad_settings(pad: u8, settings: PadSettings) -> Option<PadSettings> {
+    let params = daw_core::pad::PadParams::from(&settings);
+    if !crate::audio::atur_pad(usize::from(pad), &params) {
+        return None;
+    }
+    pad_settings(pad)
+}
+
+/// Panjang sampel pad (frame) dan sample rate-nya; (0, 0) bila kosong.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pad_sample_info(pad: u8) -> (u32, u32) {
+    crate::audio::baca(|b| {
+        b.sample(usize::from(pad)).map_or((0, 0), |s| {
+            (
+                u32::try_from(s.frames()).unwrap_or(u32::MAX),
+                s.sample_rate(),
+            )
+        })
+    })
+}
+
+/// Ringkasan gelombang sampel pad: `points` pasangan (min, max) berurutan
+/// `[min0, max0, min1, max1, …]`, untuk digambar sekali lalu disimpan.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pad_peaks(pad: u8, points: u32) -> Vec<f32> {
+    let points = usize::try_from(points).unwrap_or(0).min(4_096);
+    crate::audio::baca(|b| {
+        b.sample(usize::from(pad))
+            .map(|s| {
+                s.peaks(points)
+                    .into_iter()
+                    .flat_map(|(lo, hi)| [lo, hi])
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
 /// Angka kesehatan mesin saat ini.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
@@ -132,8 +310,26 @@ pub fn audio_health() -> AudioHealth {
 
 #[cfg(test)]
 mod tests {
+    use super::{FilterKind, PadSettings, PlayKind};
+
     #[test]
     fn versi_lewat_ffi_sama_dengan_versi_inti() {
         assert_eq!(super::engine_version(), daw_core::engine_version());
+    }
+
+    #[test]
+    fn pengaturan_pad_bolak_balik_tanpa_kehilangan() {
+        let mut p = daw_core::pad::PadParams {
+            pitch: -3.25,
+            end: 1234,
+            choke: 2,
+            ..Default::default()
+        };
+        p.envelope.release = 0.5;
+        p.filter.mode = daw_core::pad::FilterMode::BandPass;
+        p.play_mode = daw_core::pad::PlayMode::Loop;
+        let s = PadSettings::from(&p);
+        assert_eq!((s.filter, s.play), (FilterKind::BandPass, PlayKind::Loop));
+        assert_eq!(daw_core::pad::PadParams::from(&s), p);
     }
 }
