@@ -1,0 +1,49 @@
+# Aturan dependensi Rust (ADR-0010), diperiksa `cargo deny check` di CI.
+#
+# Tujuannya: repo publik ini hanya memakai dependensi berlisensi permisif,
+# tanpa celah keamanan yang sudah diketahui, dan dari sumber yang jelas.
+
+[graph]
+# Aplikasi hanya dirilis untuk arm64-v8a (ADR-0009 butir 8). Linux x86_64
+# ikut diperiksa karena CI dan CLI daw-render berjalan di sana.
+targets = ["aarch64-linux-android", "x86_64-unknown-linux-gnu"]
+
+[advisories]
+# Celah keamanan (RustSec) dan crate yang ditarik (yanked) membuat CI gagal.
+yanked = "deny"
+
+[licenses]
+# Hanya lisensi di daftar ini yang boleh. Lisensi lain, termasuk GPL,
+# membuat CI gagal sampai ada ADR khusus (ADR-0010).
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Zlib",
+  "Unlicense",
+  "Unicode-3.0",
+  # Hanya untuk dependensi yang dipakai tanpa modifikasi (mis. symphonia).
+  "MPL-2.0",
+]
+confidence-threshold = 0.93
+# Daftar di atas adalah kebijakan, bukan inventaris: lisensi yang belum
+# dipakai dependensi mana pun tidak perlu diperingatkan.
+unused-allowed-license = "allow"
+
+[licenses.private]
+# Crate kita sendiri tidak diterbitkan ke crates.io (`publish = false`);
+# lisensinya sudah tertulis di LICENSE-MIT dan LICENSE-APACHE.
+ignore = true
+
+[bans]
+# Dua versi berbeda dari crate yang sama hanya diperingatkan.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# Dependensi hanya dari crates.io, bukan dari repo git sembarang.
+unknown-registry = "deny"
+unknown-git = "deny"

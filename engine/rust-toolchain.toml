@@ -1,0 +1,8 @@
+# Semua orang (CI, sesi agen, laptop pemilik) memakai compiler yang sama.
+# rustup membaca berkas ini otomatis saat perintah cargo pertama dijalankan
+# di folder engine/, lalu memasang versi dan komponen yang tercantum.
+# Target Android (aarch64-linux-android) ditambahkan saat build APK masuk.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

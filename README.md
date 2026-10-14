@@ -31,6 +31,19 @@ keputusan dicatat, dan setiap tahap punya bukti selesai yang bisa diperiksa.
 | M8 | MIDI | ⚪ belum |
 | M9 | Premium & 1.0 | ⚪ belum |
 
+## Mesin (Rust)
+
+Mesin audio ada di folder `engine/` (ADR-0001). Versi Rust dikunci di
+`engine/rust-toolchain.toml`, dan rustup memasangnya otomatis.
+
+```text
+cd engine
+cargo test                          # semua tes
+cargo run -p daw-render -- --version
+cargo clippy --all-targets -- -D warnings
+cargo deny check                    # lisensi & keamanan dependensi (perlu cargo-deny)
+```
+
 ## Memasang di HP
 
 Belum ada APK. APK pratinjau pertama terbit di akhir M0 lewat halaman

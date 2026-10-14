@@ -1,0 +1,70 @@
+# CI MXM-DAW (rencana §13.3).
+#
+# Saat ini baru ada job `engine`. Job berikutnya ditambahkan per langkah:
+#   engine   Rust: fmt, clippy pedantic, test, CLI, cargo-deny   (M0 langkah 2)
+#   app      Flutter: format, analyze, test                       (langkah 3)
+#   android  cargo-ndk → CMake → APK, cek manifest & ukuran       (langkah 6)
+#   preview  APK pratinjau bertanda tangan di Releases            (langkah 7)
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Push baru ke PR yang sama membatalkan run lama: hemat menit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  engine:
+    name: Rust · fmt, clippy, test, cargo-deny
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+
+      # rustup membaca engine/rust-toolchain.toml lalu memasang versi
+      # dan komponen yang tercantum.
+      - name: Pasang toolchain dari rust-toolchain.toml
+        run: rustup toolchain install && rustup show active-toolchain
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/target
+          key: cargo-engine-${{ runner.os }}-${{ hashFiles('engine/rust-toolchain.toml', 'engine/Cargo.lock') }}
+
+      - name: Format (rustfmt)
+        run: cargo fmt --all --check
+
+      - name: Lint (clippy pedantic, peringatan = error)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Tes
+        run: cargo test --workspace --locked
+
+      - name: Smoke test daw-render --version
+        run: cargo run --locked -p daw-render -- --version
+
+      # Lisensi, celah keamanan, dan sumber dependensi (ADR-0010, deny.toml).
+      - name: Pasang cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Cek dependensi (cargo-deny)
+        run: cargo deny --locked check
