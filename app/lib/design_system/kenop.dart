@@ -84,7 +84,8 @@ class _KenopState extends State<Kenop> {
                 painter: _CincinKenop(
                   nilai: nilai,
                   isi: t.keyDark,
-                  jalur: t.keyLight.withValues(alpha: 0.18),
+                  // Jalur cincin harus terlihat di atas badan terang maupun gelap.
+                  jalur: t.textMuted.withValues(alpha: 0.35),
                   warna: aktif ? t.groupA : t.textMuted,
                 ),
                 child: Center(

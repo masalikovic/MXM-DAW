@@ -101,6 +101,14 @@ void main() {
     expect(mesin.seq.swing, closeTo(0.625, 0.01));
   });
 
+  testWidgets('judul menyebut pad yang sedang diedit', (tester) async {
+    await buka(tester);
+    expect(find.text('1 BAR  ·  PAD 2 SUARA2'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pilih-pad-0')));
+    await tester.pump();
+    expect(find.text('1 BAR  ·  PAD 1 SUARA1'), findsOneWidget);
+  });
+
   testWidgets('tombol main di halaman Pola', (tester) async {
     final mesin = await buka(tester);
     await tester.tap(find.byKey(const ValueKey('pola-main')));

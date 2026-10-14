@@ -61,7 +61,7 @@ class LayarSegmen extends StatelessWidget {
               ),
             )
           else if (status.playing)
-            Text('▶', style: gaya.copyWith(color: t.displayAccent)),
+            Text('\u25B6\uFE0E', style: gaya.copyWith(color: t.displayAccent)),
         ],
       ),
     );
@@ -69,6 +69,9 @@ class LayarSegmen extends StatelessWidget {
 }
 
 /// Tombol transport (rencana §6.1): dua baris di bawah pad.
+///
+/// Simbol ▶ ditulis `\u25B6\uFE0E`: tanpa penanda U+FE0E, Android
+/// menggambarnya sebagai emoji berwarna.
 class PanelTransport extends StatelessWidget {
   const PanelTransport({
     required this.aktif,
@@ -177,7 +180,7 @@ class PanelTransport extends StatelessWidget {
             ),
             _Tombol(
               kunci: 'main',
-              label: status.playing ? '■ STOP' : '▶ PLAY',
+              label: status.playing ? '■ STOP' : '\u25B6\uFE0E PLAY',
               lebar: 2,
               nyala: status.playing,
               onTekan: aktif ? onMain : null,
