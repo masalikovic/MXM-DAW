@@ -7,7 +7,9 @@ plugins {
 android {
     namespace = "io.github.masalikovic.mxmdaw"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Ditulis eksplisit (sama dengan bawaan Flutter 3.47.7) karena CI memasang
+    // NDK yang sama untuk cargo-ndk dengan membaca baris ini.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -26,6 +28,28 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Hanya arm64-v8a (ADR-0009 butir 8).
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
+
+        // Plugin Gradle Flutter menambahkan ABI lain ke ndk.abiFilters (daftar
+        // itu bersifat gabungan), sehingga AGP sempat menjalankan CMake untuk
+        // armeabi-v7a. Filter ini membatasi build CMake (libmxm_engine.so) ke
+        // arm64-v8a saja; tools/cek-apk.sh memeriksa ABI yang masuk APK.
+        externalNativeBuild {
+            cmake {
+                abiFilters += "arm64-v8a"
+            }
+        }
+    }
+
+    // libmxm_engine.so = Rust (staticlib) + adapter C++ (ADR-0003).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     buildTypes {
