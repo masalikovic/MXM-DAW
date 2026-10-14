@@ -80,7 +80,8 @@ pub fn audio_stop() {
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
 pub fn pad_hit(velocity: f32) -> bool {
-    crate::audio::ketuk(velocity)
+    // M2 langkah 1: pad di layar masih satu, dan memainkan pad 1 (KICK).
+    crate::audio::ketuk(0, velocity)
 }
 
 /// Angka kesehatan mesin saat ini.

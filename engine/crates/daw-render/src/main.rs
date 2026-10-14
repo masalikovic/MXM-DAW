@@ -2,7 +2,7 @@
 //!
 //! Nantinya CLI ini merender proyek dan kit pabrik menjadi WAV tanpa perangkat
 //! audio, untuk tes golden dan benchmark di CI (rencana §9, §12). Saat ini:
-//! `--version`, `--help`, dan `kick <berkas.wav>` (M1: dengarkan kick mesin).
+//! `--version`, `--help`, dan `kit <folder>` (M2: dengarkan kit pabrik).
 
 use std::process::ExitCode;
 
@@ -14,9 +14,10 @@ Pilihan:
   --help      Tampilkan bantuan ini
 
 Perintah:
-  kick <berkas.wav> [velocity]
-              Render satu kick (2 detik, 48 kHz, stereo, 32-bit float)
-              dengan mesin yang sama persis dengan aplikasi";
+  kit <folder> [velocity]
+              Render 16 suara kit pabrik ke folder (01-kick.wav, …; 48 kHz,
+              stereo, 32-bit float) dengan mesin yang sama persis dengan
+              aplikasi";
 
 /// Hasil satu perintah: teks untuk stdout, atau pesan galat untuk stderr.
 ///
@@ -30,15 +31,15 @@ fn run(args: &[String]) -> Result<String, String> {
             env!("CARGO_PKG_VERSION"),
             daw_core::engine_version()
         )),
-        [perintah, berkas] if perintah == "kick" => render_kick(berkas, 1.0),
-        [perintah, berkas, velocity] if perintah == "kick" => {
+        [perintah, folder] if perintah == "kit" => render_kit(folder, 1.0),
+        [perintah, folder, velocity] if perintah == "kit" => {
             let v: f32 = velocity
                 .parse()
                 .map_err(|_| format!("velocity bukan angka: {velocity}"))?;
             if !(0.0..=1.0).contains(&v) {
                 return Err(format!("velocity harus 0..1: {velocity}"));
             }
-            render_kick(berkas, v)
+            render_kit(folder, v)
         }
         _ => Err(format!(
             "argumen tidak dikenal: {}\n\n{BANTUAN}",
@@ -47,32 +48,47 @@ fn run(args: &[String]) -> Result<String, String> {
     }
 }
 
-/// Render satu kick ke WAV, lalu laporkan puncaknya.
-fn render_kick(berkas: &str, velocity: f32) -> Result<String, String> {
+/// Render setiap pad kit pabrik ke WAV tersendiri, lalu laporkan puncaknya.
+fn render_kit(folder: &str, velocity: f32) -> Result<String, String> {
     const SR: u32 = 48_000;
-    let (mut mesin, mut kirim) = daw_core::engine::Engine::new(SR);
-    kirim.hit(velocity);
-    let mut sampel = vec![0.0_f32; 2 * SR as usize * 2];
-    for blok in sampel.chunks_mut(192 * 2) {
-        mesin.render(blok, 2);
+    std::fs::create_dir_all(folder).map_err(|e| format!("gagal membuat {folder}: {e}"))?;
+    let mut laporan = Vec::new();
+    for pad in 0..daw_core::pad::PAD_COUNT {
+        let (mut mesin, mut kirim) = daw_core::engine::Engine::new(SR);
+        let nama = kirim.name(pad).unwrap_or("PAD").to_lowercase();
+        // Panjang sampel + 0,1 s untuk ekor release/filter.
+        let frames = kirim.sample(pad).map_or(0, |s| s.frames()) + SR as usize / 10;
+        kirim.hit(pad, velocity);
+        let mut sampel = vec![0.0_f32; frames * 2];
+        for blok in sampel.chunks_mut(192 * 2) {
+            mesin.render(blok, 2);
+        }
+        let berkas = std::path::Path::new(folder).join(format!("{:02}-{nama}.wav", pad + 1));
+        tulis_wav(&berkas, &sampel, SR)?;
+        let puncak = sampel.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
+        laporan.push(format!(
+            "{}: puncak {:.1} dBFS",
+            berkas.display(),
+            20.0 * puncak.log10()
+        ));
     }
+    Ok(laporan.join("\n"))
+}
+
+/// Tulis audio stereo float 32-bit ke WAV.
+fn tulis_wav(berkas: &std::path::Path, sampel: &[f32], sr: u32) -> Result<(), String> {
     let spek = hound::WavSpec {
         channels: 2,
-        sample_rate: SR,
+        sample_rate: sr,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
-    let galat = |e: hound::Error| format!("gagal menulis {berkas}: {e}");
+    let galat = |e: hound::Error| format!("gagal menulis {}: {e}", berkas.display());
     let mut penulis = hound::WavWriter::create(berkas, spek).map_err(galat)?;
-    for &x in &sampel {
+    for &x in sampel {
         penulis.write_sample(x).map_err(galat)?;
     }
-    penulis.finalize().map_err(galat)?;
-    let puncak = sampel.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
-    Ok(format!(
-        "{berkas}: kick velocity {velocity}, 2 detik, puncak {:.1} dBFS",
-        20.0 * puncak.log10()
-    ))
+    penulis.finalize().map_err(galat)
 }
 
 fn main() -> ExitCode {
@@ -123,9 +139,9 @@ mod tests {
     }
 
     #[test]
-    fn kick_velocity_salah_ditolak() {
-        assert!(run(&args(&["kick", "x.wav", "2"])).is_err());
-        assert!(run(&args(&["kick", "x.wav", "keras"])).is_err());
+    fn kit_velocity_salah_ditolak() {
+        assert!(run(&args(&["kit", "x", "2"])).is_err());
+        assert!(run(&args(&["kit", "x", "keras"])).is_err());
     }
 
     #[test]

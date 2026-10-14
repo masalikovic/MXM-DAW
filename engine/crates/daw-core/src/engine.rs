@@ -1,32 +1,59 @@
-//! Mesin real-time M1: menerima event dari UI lewat antrean bebas-lock dan
-//! mengisi buffer audio (ADR-0013).
+//! Mesin real-time: menerima event dari UI lewat antrean bebas-lock dan
+//! mengisi buffer audio (ADR-0013, ADR-0014).
 //!
 //! Pembagian peran:
-//! - [`EventSender`] dipegang thread UI (lewat FFI). Mengirim event tidak
-//!   pernah menunggu; bila antrean penuh, event dibuang dan dihitung.
+//! - [`EventSender`] dipegang thread UI (lewat FFI). Ia juga memegang salinan
+//!   parameter semua pad, jadi UI bisa membacanya tanpa bertanya ke thread
+//!   audio (ADR-0002: model ada di Rust).
 //! - [`Engine`] dipegang thread audio. [`Engine::render`] tidak mengalokasi,
-//!   tidak mengunci, dan tidak melakukan I/O (rencana §8.4); tes
-//!   `tests/tanpa_alokasi.rs` memaksakan aturan ini.
+//!   tidak mengunci, tidak melakukan I/O, dan **tidak membebaskan** memori
+//!   (rencana §8.4); tes `tests/tanpa_alokasi.rs` memaksakan aturan ini.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::kick::{KickParams, KickVoice};
+use crate::kit::factory_kit;
+use crate::pad::{PAD_COUNT, PadParams};
+use crate::sampel::Sampel;
+use crate::suara::Suara;
 
-/// Jumlah suara yang bisa berbunyi bersamaan (M1: kick saja).
-pub const MAX_VOICES: usize = 8;
+/// Polifoni (rencana §9).
+pub const MAX_VOICES: usize = 32;
 /// Kapasitas antrean UI → audio. Jauh di atas jumlah ketukan per blok audio.
 pub const EVENT_CAPACITY: usize = 256;
-/// Penguatan akhir supaya beberapa kick bertumpuk tidak langsung clipping.
+/// Penguatan akhir supaya beberapa suara bertumpuk tidak langsung clipping.
 const HEADROOM: f32 = 0.8;
+/// Mesin memproses paling banyak sekian frame sekaligus (buffer campur tetap).
+const BLOK: usize = 256;
 
 /// Event dari UI ke thread audio.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Event {
     /// Pad ditekan dengan kekuatan 0..=1.
     Hit {
+        /// Nomor pad 0..16.
+        pad: u8,
         /// Kekuatan ketukan (velocity).
         velocity: f32,
+    },
+    /// Pad dilepas (penting untuk mode gate dan loop).
+    Release {
+        /// Nomor pad.
+        pad: u8,
+    },
+    /// Parameter pad berubah.
+    SetPad {
+        /// Nomor pad.
+        pad: u8,
+        /// Parameter baru (sudah disanitasi oleh pengirim).
+        params: PadParams,
+    },
+    /// Sampel pad diganti. Sampel lama dikembalikan ke UI untuk dibebaskan.
+    SetSample {
+        /// Nomor pad.
+        pad: u8,
+        /// Sampel baru.
+        sample: Arc<Sampel>,
     },
 }
 
@@ -36,6 +63,7 @@ pub struct EngineStats {
     voices_active: AtomicU32,
     hits_played: AtomicU32,
     hits_dropped: AtomicU32,
+    pads_sounding: AtomicU32,
 }
 
 impl EngineStats {
@@ -56,22 +84,121 @@ impl EngineStats {
     pub fn hits_dropped(&self) -> u32 {
         self.hits_dropped.load(Ordering::Relaxed)
     }
+
+    /// Bit ke-`n` menyala bila pad `n` sedang berbunyi (untuk LED pad).
+    #[must_use]
+    pub fn pads_sounding(&self) -> u32 {
+        self.pads_sounding.load(Ordering::Relaxed)
+    }
 }
 
-/// Sisi UI: mengirim event ke thread audio.
+/// Sisi UI: mengirim event ke thread audio dan memegang model pad.
 pub struct EventSender {
     produsen: rtrb::Producer<Event>,
+    sampah: rtrb::Consumer<Arc<Sampel>>,
     stats: Arc<EngineStats>,
+    pads: [PadParams; PAD_COUNT],
+    sampel: [Option<Arc<Sampel>>; PAD_COUNT],
+    nama: [String; PAD_COUNT],
 }
 
 impl EventSender {
-    /// Kirim satu ketukan. `false` bila antrean penuh (event dibuang).
-    pub fn hit(&mut self, velocity: f32) -> bool {
-        let ok = self.produsen.push(Event::Hit { velocity }).is_ok();
+    fn kirim(&mut self, event: Event) -> bool {
+        self.empty_trash();
+        self.produsen.push(event).is_ok()
+    }
+
+    /// Kirim satu ketukan. `false` bila pad tidak ada atau antrean penuh.
+    pub fn hit(&mut self, pad: usize, velocity: f32) -> bool {
+        let Ok(pad) = u8::try_from(pad) else {
+            return false;
+        };
+        if usize::from(pad) >= PAD_COUNT {
+            return false;
+        }
+        let velocity = if velocity.is_nan() {
+            0.0
+        } else {
+            velocity.clamp(0.0, 1.0)
+        };
+        let ok = self.kirim(Event::Hit { pad, velocity });
         if !ok {
             self.stats.hits_dropped.fetch_add(1, Ordering::Relaxed);
         }
         ok
+    }
+
+    /// Pad dilepas.
+    pub fn release(&mut self, pad: usize) -> bool {
+        match u8::try_from(pad) {
+            Ok(p) if pad < PAD_COUNT => self.kirim(Event::Release { pad: p }),
+            _ => false,
+        }
+    }
+
+    /// Ganti parameter pad. Nilai disanitasi dulu; model di sisi UI hanya
+    /// berubah bila event berhasil masuk antrean.
+    pub fn set_pad(&mut self, pad: usize, params: &PadParams) -> bool {
+        let Some(p) = u8::try_from(pad).ok().filter(|_| pad < PAD_COUNT) else {
+            return false;
+        };
+        let params = params.sanitized();
+        let ok = self.kirim(Event::SetPad { pad: p, params });
+        if ok {
+            self.pads[pad] = params;
+        }
+        ok
+    }
+
+    /// Ganti sampel pad (mis. hasil impor). `end` pad diatur ke panjang
+    /// sampel dan `start` ke 0.
+    pub fn set_sample(&mut self, pad: usize, name: &str, sample: Sampel) -> bool {
+        let Some(p) = u8::try_from(pad).ok().filter(|_| pad < PAD_COUNT) else {
+            return false;
+        };
+        let sample = Arc::new(sample);
+        if !self.kirim(Event::SetSample {
+            pad: p,
+            sample: Arc::clone(&sample),
+        }) {
+            return false;
+        }
+        let params = PadParams {
+            start: 0,
+            end: u32::try_from(sample.frames()).unwrap_or(u32::MAX),
+            ..self.pads[pad]
+        };
+        self.sampel[pad] = Some(sample);
+        name.clone_into(&mut self.nama[pad]);
+        self.set_pad(pad, &params)
+    }
+
+    /// Parameter pad saat ini.
+    #[must_use]
+    pub fn pad(&self, pad: usize) -> Option<&PadParams> {
+        self.pads.get(pad)
+    }
+
+    /// Sampel pad saat ini.
+    #[must_use]
+    pub fn sample(&self, pad: usize) -> Option<&Arc<Sampel>> {
+        self.sampel.get(pad).and_then(Option::as_ref)
+    }
+
+    /// Nama suara pad.
+    #[must_use]
+    pub fn name(&self, pad: usize) -> Option<&str> {
+        self.nama.get(pad).map(String::as_str)
+    }
+
+    /// Bebaskan sampel lama yang dikembalikan thread audio. Dipanggil
+    /// otomatis setiap kali mengirim event.
+    pub fn empty_trash(&mut self) -> usize {
+        let mut n = 0;
+        while self.sampah.pop().is_ok() {
+            n += 1;
+        }
+        n
     }
 
     /// Statistik bersama dengan thread audio.
@@ -84,27 +211,53 @@ impl EventSender {
 /// Sisi thread audio: mengisi buffer.
 pub struct Engine {
     konsumen: rtrb::Consumer<Event>,
-    suara: [KickVoice; MAX_VOICES],
-    params: KickParams,
+    sampah: rtrb::Producer<Arc<Sampel>>,
+    suara: Box<[Suara; MAX_VOICES]>,
+    pads: [PadParams; PAD_COUNT],
+    sampel: [Option<Arc<Sampel>>; PAD_COUNT],
+    sr: f32,
+    campur: Box<[f32; BLOK * 2]>,
     stats: Arc<EngineStats>,
 }
 
 impl Engine {
-    /// Mesin baru untuk `sample_rate`, beserta pengirim event untuk UI.
+    /// Mesin baru untuk `sample_rate` dengan kit pabrik terpasang, beserta
+    /// pengirim event untuk UI.
     ///
-    /// Semua alokasi terjadi di sini, bukan di thread audio.
+    /// Semua alokasi (termasuk sintesis kit) terjadi di sini, bukan di thread
+    /// audio.
     #[must_use]
     pub fn new(sample_rate: u32) -> (Self, EventSender) {
         let (produsen, konsumen) = rtrb::RingBuffer::new(EVENT_CAPACITY);
+        // Setiap SetSample mengembalikan paling banyak satu sampel lama.
+        let (sampah_tulis, sampah_baca) = rtrb::RingBuffer::new(EVENT_CAPACITY);
         let stats = Arc::new(EngineStats::default());
+        let kit = factory_kit();
+        let pads: [PadParams; PAD_COUNT] = core::array::from_fn(|i| kit[i].params);
+        let sampel: [Option<Arc<Sampel>>; PAD_COUNT] =
+            core::array::from_fn(|i| Some(Arc::new(kit[i].sample.clone())));
+        let nama = core::array::from_fn(|i| kit[i].name.to_owned());
+        #[allow(clippy::cast_precision_loss)]
+        let sr = sample_rate.max(1) as f32;
         (
             Self {
                 konsumen,
-                suara: [KickVoice::default(); MAX_VOICES],
-                params: KickParams::new(sample_rate),
+                sampah: sampah_tulis,
+                suara: Box::new([Suara::default(); MAX_VOICES]),
+                pads,
+                sampel: sampel.clone(),
+                sr,
+                campur: Box::new([0.0; BLOK * 2]),
                 stats: Arc::clone(&stats),
             },
-            EventSender { produsen, stats },
+            EventSender {
+                produsen,
+                sampah: sampah_baca,
+                stats,
+                pads,
+                sampel,
+                nama,
+            },
         )
     }
 
@@ -121,173 +274,120 @@ impl Engine {
     pub fn render(&mut self, out: &mut [f32], channels: usize) {
         let channels = channels.max(1);
         while let Ok(event) = self.konsumen.pop() {
-            match event {
-                Event::Hit { velocity } => {
-                    self.pilih_suara().trigger(velocity);
-                    self.stats.hits_played.fetch_add(1, Ordering::Relaxed);
+            self.terapkan(event);
+        }
+        for i in 0..MAX_VOICES {
+            let s = &mut self.suara[i];
+            if s.aktif()
+                && let Some(sampel) = &self.sampel[s.pad()]
+            {
+                s.siapkan(&self.pads[s.pad()], sampel, self.sr);
+            }
+        }
+
+        for potongan in out.chunks_mut(BLOK * channels) {
+            let frames = potongan.len() / channels;
+            let campur = &mut self.campur[..frames * 2];
+            campur.fill(0.0);
+            for s in self.suara.iter_mut() {
+                if !s.terdengar() {
+                    continue;
+                }
+                match &self.sampel[s.pad()] {
+                    Some(sampel) => s.tambah_ke(sampel, campur),
+                    None => s.potong(),
+                }
+            }
+            for (frame, lr) in potongan
+                .chunks_exact_mut(channels)
+                .zip(campur.chunks_exact(2))
+            {
+                let l = (lr[0] * HEADROOM).clamp(-1.0, 1.0);
+                let r = (lr[1] * HEADROOM).clamp(-1.0, 1.0);
+                match frame {
+                    [m] => *m = (l + r) * 0.5,
+                    [a, b, sisa @ ..] => {
+                        *a = l;
+                        *b = r;
+                        sisa.fill(0.0);
+                    }
+                    [] => {}
                 }
             }
         }
 
-        for frame in out.chunks_exact_mut(channels) {
-            let mut campuran = 0.0;
-            for suara in &mut self.suara {
-                campuran += suara.next_sample(&self.params);
+        let mut aktif = 0;
+        let mut bit = 0_u32;
+        for s in self.suara.iter() {
+            if s.aktif() {
+                aktif += 1;
+                bit |= 1 << s.pad();
             }
-            let sampel = (campuran * HEADROOM).clamp(-1.0, 1.0);
-            frame.fill(sampel);
         }
-
-        let aktif = self.suara.iter().filter(|s| s.is_active()).count();
-        #[allow(clippy::cast_possible_truncation)]
-        self.stats
-            .voices_active
-            .store(aktif as u32, Ordering::Relaxed);
+        self.stats.voices_active.store(aktif, Ordering::Relaxed);
+        self.stats.pads_sounding.store(bit, Ordering::Relaxed);
     }
 
-    /// Suara yang diam, atau yang tertua bila semuanya berbunyi.
-    fn pilih_suara(&mut self) -> &mut KickVoice {
-        let indeks = self
-            .suara
-            .iter()
-            .position(|s| !s.is_active())
-            .unwrap_or_else(|| {
-                let mut tertua = 0;
-                for (i, s) in self.suara.iter().enumerate() {
-                    if s.age() > self.suara[tertua].age() {
-                        tertua = i;
+    fn terapkan(&mut self, event: Event) {
+        match event {
+            Event::Hit { pad, velocity } => {
+                let pad = usize::from(pad);
+                let Some(sampel) = &self.sampel[pad] else {
+                    return;
+                };
+                let params = self.pads[pad];
+                if params.choke != 0 {
+                    for s in self.suara.iter_mut() {
+                        if s.aktif() && s.pad() != pad && self.pads[s.pad()].choke == params.choke {
+                            s.cekik();
+                        }
                     }
                 }
-                tertua
-            });
-        &mut self.suara[indeks]
+                let i = self.pilih_suara();
+                self.suara[i].picu(pad, velocity, &params, sampel, self.sr);
+                self.stats.hits_played.fetch_add(1, Ordering::Relaxed);
+            }
+            Event::Release { pad } => {
+                for s in self.suara.iter_mut() {
+                    if s.aktif() && s.pad() == usize::from(pad) {
+                        s.lepas();
+                    }
+                }
+            }
+            Event::SetPad { pad, params } => self.pads[usize::from(pad)] = params,
+            Event::SetSample { pad, sample } => {
+                let pad = usize::from(pad);
+                for s in self.suara.iter_mut() {
+                    if s.pad() == pad {
+                        s.potong();
+                    }
+                }
+                if let Some(lama) = self.sampel[pad].replace(sample) {
+                    // Antrean sampah seukuran antrean event, jadi tidak pernah
+                    // penuh selama UI terus mengirim. Bila tetap penuh, lebih
+                    // baik bocor daripada membebaskan memori di thread audio.
+                    if let Err(rtrb::PushError::Full(lama)) = self.sampah.push(lama) {
+                        core::mem::forget(lama);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Indeks suara yang diam, atau yang tertua bila semuanya berbunyi.
+    fn pilih_suara(&self) -> usize {
+        if let Some(i) = self.suara.iter().position(|s| !s.aktif()) {
+            return i;
+        }
+        let mut tertua = 0;
+        for (i, s) in self.suara.iter().enumerate() {
+            if s.umur() > self.suara[tertua].umur() {
+                tertua = i;
+            }
+        }
+        tertua
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{EVENT_CAPACITY, Engine, MAX_VOICES};
-
-    const SR: u32 = 48_000;
-
-    fn render_detik(engine: &mut Engine, detik: f32, channels: usize) -> Vec<f32> {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let frames = (detik * 48_000.0) as usize;
-        let mut buf = vec![0.0; frames * channels];
-        for blok in buf.chunks_mut(192 * channels) {
-            engine.render(blok, channels);
-        }
-        buf
-    }
-
-    fn puncak(x: &[f32]) -> f32 {
-        x.iter().fold(0.0_f32, |m, v| m.max(v.abs()))
-    }
-
-    #[allow(clippy::cast_precision_loss)]
-    fn rms(x: &[f32]) -> f32 {
-        (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt()
-    }
-
-    #[test]
-    fn tanpa_ketukan_hening() {
-        let (mut mesin, _kirim) = Engine::new(SR);
-        assert!(render_detik(&mut mesin, 0.5, 2).iter().all(|&v| v == 0.0));
-    }
-
-    #[test]
-    fn ketukan_berbunyi_tanpa_klik_di_awal() {
-        let (mut mesin, mut kirim) = Engine::new(SR);
-        assert!(kirim.hit(1.0));
-        let x = render_detik(&mut mesin, 0.05, 1);
-        // Tanpa rampa 1 ms, sampel ke-10 sudah ±0,14; dengan rampa ±0,03.
-        // (Sampel pertama selalu 0 karena sin(0), jadi tidak cukup diperiksa.)
-        let awal = puncak(&x[..10]);
-        assert!(awal < 0.05, "10 sampel pertama memuncak di {awal}");
-        assert!(puncak(&x) > 0.5, "puncak {}", puncak(&x));
-        assert!(puncak(&x) <= 1.0);
-    }
-
-    #[test]
-    fn volume_meluruh() {
-        let (mut mesin, mut kirim) = Engine::new(SR);
-        kirim.hit(1.0);
-        let x = render_detik(&mut mesin, 1.2, 1);
-        let awal = rms(&x[..4_800]);
-        let akhir = rms(&x[48_000..52_800]);
-        assert!(akhir < awal / 100.0, "awal {awal}, akhir {akhir}");
-    }
-
-    #[test]
-    fn nada_turun() {
-        // Jarak antar zero-crossing (setengah periode) di awal lebih pendek
-        // daripada di akhir, karena nada turun dari 150 Hz ke 48 Hz.
-        let (mut mesin, mut kirim) = Engine::new(SR);
-        kirim.hit(1.0);
-        let x = render_detik(&mut mesin, 0.3, 1);
-        let silang: Vec<usize> = (1..x.len())
-            .filter(|&i| x[i - 1] <= 0.0 && x[i] > 0.0)
-            .collect();
-        let periode_awal = silang[1] - silang[0];
-        let periode_akhir = silang[silang.len() - 1] - silang[silang.len() - 2];
-        assert!(
-            periode_akhir > periode_awal + 100,
-            "{periode_awal} → {periode_akhir}"
-        );
-    }
-
-    #[test]
-    fn velocity_mengatur_kekerasan() {
-        let puncak_dengan = |v: f32| {
-            let (mut mesin, mut kirim) = Engine::new(SR);
-            kirim.hit(v);
-            puncak(&render_detik(&mut mesin, 0.05, 1))
-        };
-        let rasio = puncak_dengan(0.5) / puncak_dengan(1.0);
-        assert!((rasio - 0.5).abs() < 0.01, "rasio {rasio}");
-    }
-
-    #[test]
-    fn stereo_kedua_kanal_sama() {
-        let (mut mesin, mut kirim) = Engine::new(SR);
-        kirim.hit(1.0);
-        let x = render_detik(&mut mesin, 0.05, 2);
-        for frame in x.chunks_exact(2) {
-            assert_eq!(frame[0].to_bits(), frame[1].to_bits());
-        }
-    }
-
-    #[test]
-    fn deterministik() {
-        let jalankan = || {
-            let (mut mesin, mut kirim) = Engine::new(SR);
-            kirim.hit(0.8);
-            render_detik(&mut mesin, 0.2, 2)
-        };
-        let (a, b) = (jalankan(), jalankan());
-        assert!(a.iter().zip(&b).all(|(x, y)| x.to_bits() == y.to_bits()));
-    }
-
-    #[test]
-    fn ketukan_beruntun_tidak_melebihi_batas_suara() {
-        let (mut mesin, mut kirim) = Engine::new(SR);
-        let mut blok = vec![0.0; 192 * 2];
-        for _ in 0..40 {
-            kirim.hit(1.0);
-            mesin.render(&mut blok, 2);
-            assert!(blok.iter().all(|v| v.is_finite() && v.abs() <= 1.0));
-        }
-        assert_eq!(mesin.stats().hits_played(), 40);
-        assert!(mesin.stats().voices_active() as usize <= MAX_VOICES);
-    }
-
-    #[test]
-    fn antrean_penuh_dibuang_dan_dihitung() {
-        let (_mesin, mut kirim) = Engine::new(SR);
-        for _ in 0..EVENT_CAPACITY {
-            assert!(kirim.hit(1.0));
-        }
-        assert!(!kirim.hit(1.0));
-        assert_eq!(kirim.stats().hits_dropped(), 1);
-    }
-}
+mod tests;

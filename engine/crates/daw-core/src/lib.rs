@@ -5,11 +5,15 @@
 //! Flutter adalah urusan crate lain, sehingga semua yang ada di sini bisa dites
 //! di mesin mana pun tanpa HP (ADR-0001, ADR-0002).
 //!
-//! M0: versi mesin. M1: mesin real-time ([`engine`]) dengan satu suara kick
-//! sintetis ([`kick`]).
+//! M0: versi mesin. M1: mesin real-time ([`engine`]). M2: sampler 16 pad
+//! ([`pad`], [`sampel`], DSP di [`dsp`]) dan kit pabrik sintetis ([`kit`]).
 
+pub mod dsp;
 pub mod engine;
-pub mod kick;
+pub mod kit;
+pub mod pad;
+pub mod sampel;
+mod suara;
 
 /// Versi mesin, diambil dari `version` di `engine/Cargo.toml` saat kompilasi.
 ///
