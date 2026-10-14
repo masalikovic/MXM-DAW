@@ -37,6 +37,7 @@ ADR 0001–0008 berasal dari tabel keputusan inti di
 | [0008](0008-minsdk-27.md) | minSdk 27 (Android 8.1) | Diterima |
 | [0009](0009-jawaban-pemilik-m0.md) | Batasan produk dari pemilik (jawaban §17) | Diterima |
 | [0010](0010-lisensi-dan-aset.md) | Lisensi kode, dependensi, dan aset | Diterima |
+| [0011](0011-token-warna-dan-kontras.md) | Token warna, warna grup C/D, dan tes kontras | Diterima |
 
 ## Template
 
