@@ -34,23 +34,31 @@ fn argumen_tak_dikenal_keluar_dengan_kode_2() {
 }
 
 #[test]
-fn kick_menulis_wav_yang_bisa_dibaca_lagi() {
-    let berkas = std::env::temp_dir().join("mxm-daw-tes-kick.wav");
-    let hasil = daw_render(&["kick", berkas.to_str().unwrap(), "0.5"]);
+fn kit_menulis_16_wav_yang_bisa_dibaca_lagi() {
+    let folder = std::env::temp_dir().join("mxm-daw-tes-kit");
+    let _ = std::fs::remove_dir_all(&folder);
+    let hasil = daw_render(&["kit", folder.to_str().unwrap(), "0.5"]);
     assert!(hasil.status.success(), "{hasil:?}");
 
-    let mut wav = hound::WavReader::open(&berkas).unwrap();
+    let mut berkas: Vec<_> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    berkas.sort();
+    assert_eq!(berkas.len(), 16);
+    assert!(berkas[0].ends_with("01-kick.wav"), "{:?}", berkas[0]);
+
+    let mut wav = hound::WavReader::open(&berkas[0]).unwrap();
     let spek = wav.spec();
     assert_eq!(
         (spek.channels, spek.sample_rate, spek.bits_per_sample),
         (2, 48_000, 32)
     );
     let sampel: Vec<f32> = wav.samples::<f32>().map(Result::unwrap).collect();
-    assert_eq!(sampel.len(), 2 * 48_000 * 2);
     let puncak = sampel.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
     assert!(
         puncak > 0.3 && puncak < 0.5,
-        "puncak velocity 0,5: {puncak}"
+        "puncak kick velocity 0,5: {puncak}"
     );
-    std::fs::remove_file(berkas).unwrap();
+    std::fs::remove_dir_all(folder).unwrap();
 }

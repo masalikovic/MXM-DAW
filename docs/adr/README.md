@@ -40,6 +40,7 @@ ADR 0001–0008 berasal dari tabel keputusan inti di
 | [0011](0011-token-warna-dan-kontras.md) | Token warna, warna grup C/D, dan tes kontras | Diterima |
 | [0012](0012-saluran-dan-kunci-pratinjau.md) | Saluran pratinjau/rilis dan kunci tanda tangan pratinjau | Diterima |
 | [0013](0013-mesin-real-time.md) | Bentuk mesin real-time: antrean bebas-lock, render tanpa alokasi | Diterima |
+| [0014](0014-sampler-dan-memori-sampel.md) | Sampler: model pad di Rust, sampel dibebaskan di thread UI | Diterima |
 
 ## Template
 

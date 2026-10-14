@@ -74,13 +74,14 @@ fn bebaskan(mesin: *mut Engine) {
     }
 }
 
-/// Kirim satu ketukan dari UI. `false` bila mesin belum berjalan atau antrean penuh.
-pub(crate) fn ketuk(velocity: f32) -> bool {
+/// Kirim satu ketukan dari UI. `false` bila mesin belum berjalan, pad tidak
+/// ada, atau antrean penuh.
+pub(crate) fn ketuk(pad: usize, velocity: f32) -> bool {
     SISI_UI
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .as_mut()
-        .is_some_and(|ui| ui.pengirim.hit(velocity))
+        .is_some_and(|ui| ui.pengirim.hit(pad, velocity))
 }
 
 /// Statistik mesin: (suara aktif, ketukan dimainkan, ketukan dibuang).
@@ -187,16 +188,16 @@ mod tests {
     fn alur_lengkap_lewat_ffi() {
         // Tanpa mesin: buffer diisi hening, ketukan ditolak.
         assert!(render(64).iter().all(|&v| v == 0.0));
-        assert!(!ketuk(1.0));
+        assert!(!ketuk(0, 1.0));
 
         pasang_mesin();
-        assert!(ketuk(1.0));
+        assert!(ketuk(0, 1.0));
         let x = render(2_400);
         assert!(x.iter().any(|v| v.abs() > 0.3), "kick tidak berbunyi");
         assert_eq!(statistik().1, 1);
 
         lepas_mesin();
-        assert!(!ketuk(1.0));
+        assert!(!ketuk(0, 1.0));
         assert!(render(64).iter().all(|&v| v == 0.0));
     }
 }
