@@ -3,7 +3,7 @@
          Izin INTERNET hanya ada di src/debug dan src/profile untuk hot reload.
          Aplikasi dikunci potret sampai mode Studio di M9 (ADR-0009 butir 3). -->
     <application
-        android:label="MXM-DAW"
+        android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

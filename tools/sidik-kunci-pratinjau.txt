@@ -1,0 +1,8 @@
+# Sidik jari SHA-256 sertifikat kunci pratinjau milik pemilik (ADR-0012).
+# Ini informasi PUBLIK (sama dengan yang dibaca siapa pun dari APK); kuncinya
+# sendiri dan kata sandinya tetap rahasia dan tidak pernah ada di repo.
+# tools/cek-tanda-tangan.sh menolak APK pratinjau yang ditandatangani kunci
+# lain. Mengubah baris ini = mengganti kunci = pengguna harus uninstall dan
+# kehilangan proyek (rencana §16). Jangan diubah tanpa ADR baru.
+#
+# Diisi pemilik setelah membuat kunci (docs/panduan-kunci-pratinjau.md).

@@ -1,0 +1,7 @@
+# Pengaman: kunci tanda tangan dan salinan base64-nya tidak pernah masuk repo
+# (ADR-0012, AGENTS.md), di folder mana pun.
+*.jks
+*.keystore
+*.p12
+*.b64
+key.properties

@@ -52,12 +52,43 @@ android {
         }
     }
 
+    // Dua saluran (ADR-0012). Flutter memilihnya dengan `--flavor`.
+    //   pratinjau: ID ….mxmdaw.preview, terbit otomatis dari main
+    //   rilis    : ID ….mxmdaw, hanya dari tag (belum dipakai di M0)
+    flavorDimensions += "saluran"
+    productFlavors {
+        create("pratinjau") {
+            dimension = "saluran"
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            manifestPlaceholders["appLabel"] = "MXM-DAW Pratinjau"
+        }
+        create("rilis") {
+            dimension = "saluran"
+            manifestPlaceholders["appLabel"] = "MXM-DAW"
+        }
+    }
+
+    // Kunci tanda tangan dibaca dari variabel lingkungan yang hanya diisi CI
+    // saat build di main, dari GitHub secret milik pemilik (ADR-0009 butir 7,
+    // ADR-0012). Kunci dan kata sandinya tidak pernah ada di repo atau log.
+    // Tanpa variabel itu (PR, build lokal), APK ditandatangani kunci debug.
+    val keystoreMxm = System.getenv("MXMDAW_KEYSTORE")
+    signingConfigs {
+        if (keystoreMxm != null) {
+            create("pemilik") {
+                storeFile = file(keystoreMxm)
+                storePassword = System.getenv("MXMDAW_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("MXMDAW_KEY_ALIAS")
+                keyPassword = System.getenv("MXMDAW_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Sementara memakai kunci debug supaya build rilis bisa dicoba.
-            // Kunci pratinjau milik pemilik (GitHub secret) dipasang di M0
-            // langkah 7 (ADR-0009 butir 7). Kunci tidak pernah ada di repo.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("pemilik")
+                ?: signingConfigs.getByName("debug")
         }
     }
 }
