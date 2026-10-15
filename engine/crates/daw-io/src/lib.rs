@@ -6,9 +6,11 @@
 //! sini bisa dites di mana saja dengan byte buatan.
 //!
 //! M2: WAV (PCM 8/16/24/32-bit dan float 32-bit). AIFF, FLAC, MP3, dan OGG
-//! menyusul.
+//! menyusul. M4: berkas proyek ([`proyek`]).
 
 use std::io::Cursor;
+
+pub mod proyek;
 
 use daw_core::sampel::Sampel;
 
@@ -48,6 +50,16 @@ pub fn decode_wav(bytes: &[u8]) -> Result<Sampel, String> {
             "terlalu panjang: {} detik (maksimal {MAX_SECONDS})",
             frames / spek.sample_rate
         ));
+    }
+
+    // WAV 16-bit 1–2 kanal dibaca langsung sebagai int16 (format penyimpanan
+    // mesin), jadi berkas proyek yang dibuka lagi sama persis bit demi bit.
+    if spek.sample_format == hound::SampleFormat::Int && spek.bits_per_sample == 16 && kanal <= 2 {
+        let data: Vec<i16> = wav
+            .samples::<i16>()
+            .collect::<Result<_, _>>()
+            .map_err(|e| galat_baca(&e))?;
+        return Ok(Sampel::from_i16(data, kanal, spek.sample_rate));
     }
 
     let mentah: Vec<f32> = match (spek.sample_format, spek.bits_per_sample) {

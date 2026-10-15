@@ -29,6 +29,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pilihAudio" -> pilihAudio(result)
+                    // Folder data pribadi aplikasi: tidak butuh izin, ikut
+                    // terhapus saat aplikasi di-uninstall (ADR-0016).
+                    "folderProyek" -> result.success(java.io.File(filesDir, "proyek").absolutePath)
                     else -> result.notImplemented()
                 }
             }

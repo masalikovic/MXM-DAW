@@ -549,6 +549,57 @@ pub fn transport_state(group: u8) -> TransportState {
     }
 }
 
+/// Buka proyek dari folder `dir` (folder data pribadi aplikasi) sebelum mesin
+/// dimulai. Mengembalikan peringatan (mis. sampel hilang); daftar kosong bila
+/// semua pulih atau belum ada proyek.
+///
+/// # Errors
+/// Pesan untuk pengguna bila proyek tidak bisa dibuka. Bila proyek dibuat
+/// versi aplikasi yang lebih baru, simpan otomatis **diblokir** supaya berkas
+/// itu tidak tertimpa.
+#[allow(clippy::needless_pass_by_value)] // flutter_rust_bridge memberi String milik sendiri
+pub fn project_load(dir: String) -> Result<Vec<String>, String> {
+    use daw_io::proyek::{LoadError, load};
+    match load(std::path::Path::new(&dir)) {
+        Ok(None) => Ok(Vec::new()),
+        Ok(Some(hasil)) => {
+            if !crate::audio::pasang_model(hasil.bank, hasil.seq) {
+                return Err("mesin sudah berjalan; proyek harus dibuka lebih dulu".to_owned());
+            }
+            Ok(hasil.warnings)
+        }
+        Err(e @ LoadError::TooNew(_)) => {
+            crate::audio::blokir_simpan(true);
+            Err(e.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Simpan model ke folder `dir` secara atomik. Tidak `sync`: menulis sampel
+/// impor ke disk bisa memakan waktu, jadi dijalankan di thread pekerja.
+///
+/// # Errors
+/// Pesan untuk pengguna bila disk penuh, atau simpan diblokir.
+#[allow(clippy::needless_pass_by_value)] // flutter_rust_bridge memberi String milik sendiri
+pub fn project_save(dir: String) -> Result<(), String> {
+    if crate::audio::simpan_diblokir() {
+        return Err(
+            "simpan diblokir: proyek di HP dibuat versi aplikasi yang lebih baru".to_owned(),
+        );
+    }
+    let (bank, seq) = crate::audio::salinan_model();
+    daw_io::proyek::save(std::path::Path::new(&dir), &bank, &seq)
+}
+
+/// Revisi model; naik setiap kali ada perubahan. Simpan otomatis membandingkan
+/// angka ini dengan revisi yang terakhir disimpan.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn project_revision() -> i64 {
+    i64::try_from(crate::audio::revisi()).unwrap_or(i64::MAX)
+}
+
 /// Angka kesehatan mesin saat ini.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]

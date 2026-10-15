@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../design_system/tokens.dart';
 import '../engine/audio.dart';
 import '../engine/engine.dart';
+import '../engine/proyek.dart';
+import '../engine/simpan_otomatis.dart';
 import 'grup.dart';
 import 'pad_grid.dart';
 import 'pola/halaman_pola.dart';
@@ -15,9 +17,21 @@ import 'transport/transport.dart';
 /// Layar utama (Pocket, rencana §6.1): panel kesehatan mesin, layar segmen,
 /// grup A–D, 16 pad grup terpilih, dan transport sequencer.
 class Beranda extends StatefulWidget {
-  const Beranda({required this.engine, this.audio, super.key});
+  const Beranda({
+    required this.engine,
+    this.audio,
+    this.proyek,
+    this.pesanAwal,
+    super.key,
+  });
 
   final EngineStatus engine;
+
+  /// Proyek untuk simpan otomatis; `null` = tanpa simpan.
+  final Proyek? proyek;
+
+  /// Pesan saat membuka proyek, ditampilkan sekali.
+  final String? pesanAwal;
 
   /// `null` bila mesin Rust tidak termuat; pad lalu dinonaktifkan.
   final MesinAudio? audio;
@@ -31,6 +45,8 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   AudioHealth? _kesehatan;
   String? _galat;
   Timer? _penyegarLed;
+  SimpanOtomatis? _simpan;
+  String? _galatSimpan;
   int _berbunyi = 0;
   List<String> _nama = const [];
   TransportState _status = const TransportState(
@@ -58,6 +74,27 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.proyek case final proyek?) {
+      _simpan = SimpanOtomatis(
+        proyek,
+        onGalat: (galat) {
+          if (mounted) setState(() => _galatSimpan = '$galat');
+        },
+        onTersimpan: () {
+          if (mounted && _galatSimpan != null) {
+            setState(() => _galatSimpan = null);
+          }
+        },
+      )..mulai();
+    }
+    if (widget.pesanAwal case final pesan?) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(pesan), duration: const Duration(seconds: 6)),
+        );
+      });
+    }
     if (widget.audio != null) {
       _nama = widget.audio!.namaPad();
       _seq = widget.audio!.pengaturanSeq(_grup);
@@ -81,6 +118,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _penyegar?.cancel();
     _penyegarLed?.cancel();
+    _simpan?.berhenti();
     unawaited(widget.audio?.berhenti());
     super.dispose();
   }
@@ -97,6 +135,9 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
+        // Simpan dulu: setelah ke latar, Android boleh mematikan aplikasi
+        // kapan saja tanpa memberi tahu.
+        unawaited(_simpan?.simpanSekarang());
         unawaited(audio.berhenti());
       case AppLifecycleState.inactive:
         break;
@@ -261,7 +302,11 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                   style: TextStyle(color: t.textMuted, fontSize: 11),
                 ),
               const SizedBox(height: 8),
-              PanelKesehatan(kesehatan: _kesehatan, galat: _galat),
+              PanelKesehatan(
+                kesehatan: _kesehatan,
+                galat: _galat,
+                galatSimpan: _galatSimpan,
+              ),
               if (_seq case final seq?) ...[
                 const SizedBox(height: 8),
                 LayarSegmen(grup: _grup, status: _status, seq: seq),
@@ -320,10 +365,18 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
 /// Panel "kesehatan mesin" (rencana §6.3): angka apa adanya, termasuk yang
 /// buruk (prinsip "jujur", §2).
 class PanelKesehatan extends StatelessWidget {
-  const PanelKesehatan({required this.kesehatan, this.galat, super.key});
+  const PanelKesehatan({
+    required this.kesehatan,
+    this.galat,
+    this.galatSimpan,
+    super.key,
+  });
 
   final AudioHealth? kesehatan;
   final String? galat;
+
+  /// Simpan otomatis gagal (mis. disk penuh); tampil sampai simpan berhasil.
+  final String? galatSimpan;
 
   @override
   Widget build(BuildContext context) {
@@ -331,6 +384,7 @@ class PanelKesehatan extends StatelessWidget {
     final k = kesehatan;
     final baris = <String>[
       if (galat != null) 'AUDIO GAGAL: $galat',
+      if (galatSimpan != null) 'SIMPAN GAGAL: $galatSimpan',
       if (k == null)
         'AUDIO TIDAK TERSEDIA'
       else ...[
@@ -359,7 +413,9 @@ class PanelKesehatan extends StatelessWidget {
             Text(
               b,
               style: TextStyle(
-                color: b.startsWith('AUDIO') ? t.displayAccent : t.displayOn,
+                color: b.startsWith('AUDIO') || b.startsWith('SIMPAN')
+                    ? t.displayAccent
+                    : t.displayOn,
                 fontFamily: 'monospace',
                 fontSize: 11,
                 height: 1.3,

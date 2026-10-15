@@ -34,6 +34,27 @@ impl Sampel {
         }
     }
 
+    /// Dari int16 interleaved apa adanya (mis. WAV 16-bit dari berkas proyek),
+    /// supaya simpan → buka menghasilkan bit yang sama.
+    ///
+    /// # Panics
+    /// Bila `kanal` bukan 1 atau 2.
+    #[must_use]
+    pub fn from_i16(data: Vec<i16>, kanal: usize, sample_rate: u32) -> Self {
+        assert!(kanal == 1 || kanal == 2, "kanal harus 1 atau 2: {kanal}");
+        Self {
+            data: data.into_boxed_slice(),
+            kanal,
+            sample_rate,
+        }
+    }
+
+    /// Data int16 interleaved, untuk ditulis ke berkas.
+    #[must_use]
+    pub fn as_i16(&self) -> &[i16] {
+        &self.data
+    }
+
     /// Jumlah frame.
     #[must_use]
     pub fn frames(&self) -> usize {

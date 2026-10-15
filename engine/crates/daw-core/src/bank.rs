@@ -11,12 +11,25 @@ use crate::kit::factory_kit;
 use crate::pad::{FilterMode, GROUP_COUNT, PAD_COUNT, PadParams, TOTAL_PADS};
 use crate::sampel::Sampel;
 
+/// Asal sampel sebuah pad; menentukan cara menyimpannya di berkas proyek.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleSource {
+    /// Tanpa sampel.
+    Empty,
+    /// Suara kit pabrik ke-`n`; tidak perlu disimpan, cukup dibangkitkan ulang.
+    Factory(u8),
+    /// Sampel impor dengan nomor unik; disimpan sebagai `samples/s<id>.wav`.
+    Imported(u64),
+}
+
 /// Isi 64 pad (4 grup).
 #[derive(Debug, Clone)]
 pub struct PadBank {
     params: [PadParams; TOTAL_PADS],
     samples: [Option<Arc<Sampel>>; TOTAL_PADS],
     names: [String; TOTAL_PADS],
+    sources: [SampleSource; TOTAL_PADS],
+    next_id: u64,
 }
 
 /// Variasi kit pabrik untuk grup B–D: sampel yang sama (tanpa memori
@@ -60,7 +73,43 @@ impl PadBank {
             params: core::array::from_fn(|i| variasi(i / PAD_COUNT, kit[i % PAD_COUNT].params)),
             samples: core::array::from_fn(|i| Some(Arc::clone(&sampel[i % PAD_COUNT]))),
             names: core::array::from_fn(|i| kit[i % PAD_COUNT].name.to_owned()),
+            #[allow(clippy::cast_possible_truncation)]
+            sources: core::array::from_fn(|i| SampleSource::Factory((i % PAD_COUNT) as u8)),
+            next_id: 1,
         }
+    }
+
+    /// Asal sampel pad.
+    #[must_use]
+    pub fn source(&self, pad: usize) -> Option<SampleSource> {
+        self.sources.get(pad).copied()
+    }
+
+    /// Pasang isi pad apa adanya (dipakai pemuat berkas proyek). `false` bila
+    /// nomor pad salah.
+    pub fn restore_pad(
+        &mut self,
+        pad: usize,
+        name: &str,
+        params: &PadParams,
+        sample: Option<Arc<Sampel>>,
+        source: SampleSource,
+    ) -> bool {
+        if pad >= TOTAL_PADS {
+            return false;
+        }
+        self.params[pad] = params.sanitized();
+        name.clone_into(&mut self.names[pad]);
+        self.sources[pad] = if sample.is_some() {
+            source
+        } else {
+            SampleSource::Empty
+        };
+        self.samples[pad] = sample;
+        if let SampleSource::Imported(id) = source {
+            self.next_id = self.next_id.max(id + 1);
+        }
+        true
     }
 
     /// Parameter pad.
@@ -99,6 +148,8 @@ impl PadBank {
         };
         self.samples[pad] = Some(sample);
         name.clone_into(&mut self.names[pad]);
+        self.sources[pad] = SampleSource::Imported(self.next_id);
+        self.next_id += 1;
         self.set_params(pad, &params)
     }
 }
@@ -143,5 +194,7 @@ mod tests {
         let p = b.set_sample(1, "PUNYAKU", s).unwrap();
         assert_eq!((p.start, p.end), (0, 100));
         assert_eq!(b.name(1), Some("PUNYAKU"));
+        assert_eq!(b.source(1), Some(super::SampleSource::Imported(1)));
+        assert_eq!(b.source(2), Some(super::SampleSource::Factory(2)));
     }
 }

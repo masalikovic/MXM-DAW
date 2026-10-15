@@ -362,3 +362,31 @@ fn bank_dibawa_ke_mesin_baru() {
     k.hit(2, 1.0);
     assert!(rms(&render(&mut m, 0.1, 2)) > 0.1);
 }
+
+#[test]
+fn setiap_perubahan_model_dihitung() {
+    let (mut m, mut k) = mesin();
+    assert_eq!(k.changes(), 0);
+    k.hit(0, 1.0); // memainkan bukan mengubah model
+    assert_eq!(k.changes(), 0);
+    k.set_pad(0, &PadParams::default());
+    k.set_sample(1, "S", sinus(440.0));
+    k.set_mute(1, true);
+    k.set_settings(&crate::seq::SeqSettings {
+        bpm: 99.0,
+        ..crate::seq::SeqSettings::default()
+    });
+    k.set_pattern(0, crate::seq::Pattern::default());
+    assert_eq!(k.changes(), 5);
+    // Rekaman yang masuk ke pola juga perubahan.
+    k.set_settings(&crate::seq::SeqSettings {
+        bpm: 99.0,
+        count_in_bars: 0,
+        ..crate::seq::SeqSettings::default()
+    });
+    k.transport(true, true);
+    k.hit(0, 1.0);
+    render(&mut m, 0.01, 2);
+    k.poll_recording(0.0);
+    assert_eq!(k.changes(), 7);
+}

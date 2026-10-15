@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mxmdaw/engine/audio.dart';
 import 'package:mxmdaw/engine/engine.dart';
+import 'package:mxmdaw/engine/proyek.dart';
 import 'package:mxmdaw/main.dart';
 
 /// Mesin palsu: mencatat panggilan, tanpa perangkat audio.
@@ -202,14 +203,43 @@ const pengaturanBawaan = PadSettings(
   choke: 0,
 );
 
-Future<MesinPalsu> pasang(WidgetTester tester, {Object? galatMulai}) async {
+/// Proyek palsu untuk tes simpan dari layar utama.
+class ProyekPalsu implements Proyek {
+  int rev = 0;
+  int jumlahSimpan = 0;
+  Object? galat;
+
+  @override
+  Future<List<String>> buka() async => const [];
+
+  @override
+  Future<void> simpan() async {
+    jumlahSimpan++;
+    if (galat != null) throw galat!;
+  }
+
+  @override
+  int revisi() => rev;
+}
+
+Future<MesinPalsu> pasang(
+  WidgetTester tester, {
+  Object? galatMulai,
+  Proyek? proyek,
+  String? pesanAwal,
+}) async {
   // Layar HP kecil (360 × 740 dp), seperti Redmi 13C.
   tester.view.physicalSize = const Size(1080, 2220);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
   final mesin = MesinPalsu(galatMulai: galatMulai);
   await tester.pumpWidget(
-    MxmDawApp(engine: const EngineReady('0.1.0'), audio: mesin),
+    MxmDawApp(
+      engine: const EngineReady('0.1.0'),
+      audio: mesin,
+      proyek: proyek,
+      pesanAwal: pesanAwal,
+    ),
   );
   await tester.pump();
   return mesin;
@@ -465,6 +495,34 @@ void main() {
     await tester.pumpAndSettle();
     await jari.up();
     expect(find.text('D:01  D1'), findsOneWidget);
+  });
+
+  testWidgets('ke latar: proyek disimpan saat itu juga', (tester) async {
+    final proyek = ProyekPalsu();
+    await pasang(tester, proyek: proyek);
+    proyek.rev = 5;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(proyek.jumlahSimpan, 1);
+  });
+
+  testWidgets('simpan gagal tampil di panel sampai berhasil', (tester) async {
+    final proyek = ProyekPalsu()..galat = 'disk penuh';
+    await pasang(tester, proyek: proyek);
+    proyek.rev = 1;
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('SIMPAN GAGAL: disk penuh'), findsOneWidget);
+    proyek.galat = null;
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.textContaining('SIMPAN GAGAL'), findsNothing);
+  });
+
+  testWidgets('pesan saat membuka proyek tampil sekali', (tester) async {
+    await pasang(tester, pesanAwal: 'Proyek dibuka: sampel s3.wav hilang');
+    await tester.pump();
+    expect(find.text('Proyek dibuka: sampel s3.wav hilang'), findsOneWidget);
   });
 
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (

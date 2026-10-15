@@ -34,6 +34,9 @@ rtrb = "0.4.0"
 assert_no_alloc = "1.1.2"
 # Menulis WAV dari CLI daw-render.
 hound = "3.5.1"
+# Berkas proyek JSON (ADR-0007), hanya di daw-io.
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
 
 # Lint bersama. `warn` di sini menjadi error di CI karena clippy dijalankan
 # dengan `-D warnings` (rencana §13.2).
