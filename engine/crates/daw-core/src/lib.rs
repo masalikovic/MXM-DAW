@@ -15,6 +15,7 @@ pub mod dsp;
 pub mod engine;
 pub mod kit;
 pub mod pad;
+pub mod riwayat;
 pub mod sampel;
 pub mod seq;
 mod suara;

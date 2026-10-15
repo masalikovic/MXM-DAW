@@ -138,6 +138,20 @@ impl PadBank {
         Some(*tujuan)
     }
 
+    /// Salin isi pad `dari` ke pad `ke`: parameter, sampel (dibagi lewat
+    /// `Arc`), nama, dan asalnya. `false` bila nomor pad salah.
+    pub fn copy_pad(&mut self, dari: usize, ke: usize) -> bool {
+        if dari >= TOTAL_PADS || ke >= TOTAL_PADS {
+            return false;
+        }
+        self.params[ke] = self.params[dari];
+        let (sampel, nama) = (self.samples[dari].clone(), self.names[dari].clone());
+        self.samples[ke] = sampel;
+        self.names[ke] = nama;
+        self.sources[ke] = self.sources[dari];
+        true
+    }
+
     /// Ganti sampel dan nama pad; `start` = 0 dan `end` = panjang sampel.
     /// Mengembalikan parameter baru, atau `None` bila nomor pad salah.
     pub fn set_sample(&mut self, pad: usize, name: &str, sample: Arc<Sampel>) -> Option<PadParams> {

@@ -110,6 +110,8 @@ class PanelTransport extends StatelessWidget {
     required this.onTap,
     required this.onHapus,
     required this.onGrid,
+    required this.onUndo,
+    required this.onRedo,
     super.key,
   });
 
@@ -128,6 +130,10 @@ class PanelTransport extends StatelessWidget {
 
   /// Buka halaman Pola (grid langkah, swing, kuantisasi).
   final VoidCallback onGrid;
+
+  /// UNDO: ketuk = batalkan, tahan = ulangi (redo).
+  final VoidCallback onUndo;
+  final VoidCallback onRedo;
 
   /// Pilihan panjang pola.
   static const pilihanBar = [1, 2, 4, 8, 16];
@@ -172,6 +178,12 @@ class PanelTransport extends StatelessWidget {
               onTekan: aktif
                   ? () => onSeq((s) => s.salin(metronome: !s.metronome))
                   : null,
+            ),
+            _Tombol(
+              kunci: 'undo',
+              label: 'UNDO',
+              onTekan: aktif ? onUndo : null,
+              onTahan: aktif ? onRedo : null,
             ),
           ],
         ),

@@ -143,6 +143,47 @@ class MesinPalsu implements MesinAudio {
     return true;
   }
 
+  /// Riwayat palsu: hanya menghitung; isi model tidak dipulihkan.
+  var undo = 0;
+  var redo = 0;
+
+  @override
+  bool urungkan() {
+    if (undo == 0) return false;
+    perintah.add('undo');
+    undo--;
+    redo++;
+    return true;
+  }
+
+  @override
+  bool ulangi() {
+    if (redo == 0) return false;
+    perintah.add('redo');
+    redo--;
+    undo++;
+    return true;
+  }
+
+  @override
+  (int, int) jumlahRiwayat() => (undo, redo);
+
+  @override
+  bool salinPad(int dari, int ke) {
+    perintah.add('salin-pad $dari→$ke');
+    nama[ke] = nama[dari];
+    return true;
+  }
+
+  @override
+  bool salinGrup(int dari, int ke) {
+    perintah.add('salin-grup $dari→$ke');
+    for (var i = 0; i < 16; i++) {
+      nama[ke * 16 + i] = nama[dari * 16 + i];
+    }
+    return true;
+  }
+
   final impor = <(int, String, int)>[];
   String? galatImpor;
 
@@ -603,6 +644,30 @@ void main() {
       );
     },
   );
+
+  testWidgets('UNDO: ketuk = undo, tahan = redo, layar dibaca ulang', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('undo')));
+    await tester.pump();
+    expect(find.text('Tidak ada yang bisa di-undo'), findsOneWidget);
+    expect(mesin.perintah, isEmpty);
+
+    mesin
+      ..undo = 2
+      ..nama[0] = 'LAMA';
+    await tester.tap(find.byKey(const ValueKey('undo')));
+    await tester.pump();
+    expect(mesin.perintah, ['undo']);
+    expect(find.text('Undo · sisa 1'), findsOneWidget);
+    expect(find.text('LAMA'), findsOneWidget, reason: 'nama pad dibaca ulang');
+
+    await tester.longPress(find.byKey(const ValueKey('undo')));
+    await tester.pump();
+    expect(mesin.perintah, ['undo', 'redo']);
+    expect(find.text('Redo · sisa 0'), findsOneWidget);
+  });
 
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (
     tester,

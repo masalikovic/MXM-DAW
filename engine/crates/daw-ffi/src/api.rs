@@ -615,6 +615,46 @@ pub fn project_revision() -> i64 {
     i64::try_from(crate::audio::revisi()).unwrap_or(i64::MAX)
 }
 
+/// Batalkan langkah terakhir (rencana §4.3, 100 langkah). Satu gerakan
+/// (memutar kenop, satu sesi rekaman) = satu langkah. `false` bila tidak ada.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn undo() -> bool {
+    crate::audio::undo_redo(false)
+}
+
+/// Ulangi langkah yang dibatalkan. `false` bila tidak ada.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn redo() -> bool {
+    crate::audio::undo_redo(true)
+}
+
+/// (jumlah undo, jumlah redo) yang tersedia, untuk tombol di layar.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn history_counts() -> (u32, u32) {
+    let (u, r) = crate::audio::jumlah_riwayat();
+    (
+        u32::try_from(u).unwrap_or(u32::MAX),
+        u32::try_from(r).unwrap_or(u32::MAX),
+    )
+}
+
+/// Salin suara pad `from` ke pad `to` (nomor global): parameter, sampel, nama.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pad_copy(from: u8, to: u8) -> bool {
+    crate::audio::salin_pad(usize::from(from), usize::from(to))
+}
+
+/// Salin grup `from` ke grup `to`: 16 suara beserta polanya.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn group_copy(from: u8, to: u8) -> bool {
+    crate::audio::salin_grup(usize::from(from), usize::from(to))
+}
+
 /// Angka kesehatan mesin saat ini.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
