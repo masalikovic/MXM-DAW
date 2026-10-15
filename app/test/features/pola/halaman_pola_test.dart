@@ -70,7 +70,9 @@ void main() {
   ) async {
     final mesin = await buka(tester);
     mesin
-      ..not = [const NoteData(tick: 245, pad: 1, velocity: 0.9, length: 240)]
+      ..not = [
+        const NoteData(tick: 245, pad: 1, velocity: 0.9, length: 240, pitch: 0),
+      ]
       ..status = const TransportState(
         playing: true,
         recording: true,

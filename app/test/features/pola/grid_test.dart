@@ -3,7 +3,7 @@ import 'package:mxmdaw/engine/audio.dart';
 import 'package:mxmdaw/features/pola/grid.dart';
 
 NoteData not(int tick, int pad, [double velocity = 1]) =>
-    NoteData(tick: tick, pad: pad, velocity: velocity, length: 240);
+    NoteData(tick: tick, pad: pad, velocity: velocity, length: 240, pitch: 0);
 
 void main() {
   test('langkah kosong dinyalakan: not 1/16 di awal langkah', () {

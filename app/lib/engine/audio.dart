@@ -23,11 +23,16 @@ abstract interface class MesinAudio {
   /// Tutup stream audio (mis. saat aplikasi ke latar, ADR-0009 butir 4).
   Future<void> berhenti();
 
-  /// Pad `pad` (0..15) ditekan. `false` bila mesin belum berjalan.
-  bool ketuk(int pad, double velocity);
+  /// Pad global `pad` (0..63) ditekan, dengan transpose `nada` (mode KEYS).
+  /// `false` bila mesin belum berjalan.
+  bool ketuk(int pad, double velocity, {int nada = 0});
 
   /// Pad `pad` dilepas (mode gate dan loop berhenti).
-  bool lepas(int pad);
+  bool lepas(int pad, {int nada = 0});
+
+  /// Note repeat: selama aktif, mesin membunyikan pad ulang setiap [rate] tick
+  /// (240 = 1/16). [rate] 0 = berhenti.
+  bool ulang(int pad, double velocity, {required int rate, int nada = 0});
 
   /// Bit ke-`n` menyala bila pad `n` sedang berbunyi (untuk LED).
   int padBerbunyi(int grup);
@@ -96,11 +101,16 @@ class MesinAudioRust implements MesinAudio {
   Future<void> berhenti() => rust.audioStop();
 
   @override
-  bool ketuk(int pad, double velocity) =>
-      rust.padHit(pad: pad, velocity: velocity);
+  bool ketuk(int pad, double velocity, {int nada = 0}) =>
+      rust.padHit(pad: pad, velocity: velocity, semitones: nada);
 
   @override
-  bool lepas(int pad) => rust.padRelease(pad: pad);
+  bool lepas(int pad, {int nada = 0}) =>
+      rust.padRelease(pad: pad, semitones: nada);
+
+  @override
+  bool ulang(int pad, double velocity, {required int rate, int nada = 0}) =>
+      rust.padRepeat(pad: pad, velocity: velocity, semitones: nada, rate: rate);
 
   @override
   int padBerbunyi(int grup) => rust.padsSounding(group: grup);

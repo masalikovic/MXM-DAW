@@ -73,22 +73,33 @@ pub fn audio_stop() {
     crate::audio::lepas_mesin();
 }
 
-/// Pad `pad` (0..16) ditekan dengan kekuatan 0..=1. `false` bila mesin belum
+/// Pad `pad` (nomor global 0..64) ditekan dengan kekuatan 0..=1 dan
+/// transpose `semitones` (mode KEYS; 0 = nada asli). `false` bila mesin belum
 /// berjalan atau nomor pad salah.
 ///
 /// `sync`: dipanggil langsung dari event sentuh, hanya memasukkan event ke
 /// antrean (mikrodetik), tanpa menunggu thread audio (rencana §7).
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn pad_hit(pad: u8, velocity: f32) -> bool {
-    crate::audio::ketuk(usize::from(pad), velocity)
+pub fn pad_hit(pad: u8, velocity: f32, semitones: i8) -> bool {
+    crate::audio::ketuk_nada(usize::from(pad), velocity, semitones)
 }
 
-/// Pad `pad` dilepas (penting untuk mode gate dan loop).
+/// Pad `pad` dengan transpose `semitones` dilepas (penting untuk mode gate
+/// dan loop).
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn pad_release(pad: u8) -> bool {
-    crate::audio::lepas(usize::from(pad))
+pub fn pad_release(pad: u8, semitones: i8) -> bool {
+    crate::audio::lepas_nada(usize::from(pad), semitones)
+}
+
+/// Note repeat (rencana §4.1): selama pad ditahan, mesin membunyikannya ulang
+/// tepat setiap `rate` tick (240 = 1/16, 160 = 1/16 triplet). `rate` 0 =
+/// berhenti. Saat merekam, ulangan ikut masuk ke pola.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn pad_repeat(pad: u8, velocity: f32, semitones: i8, rate: u32) -> bool {
+    crate::audio::ulang(usize::from(pad), velocity, semitones, rate)
 }
 
 /// Bit ke-`n` menyala bila pad `n` sedang berbunyi; untuk LED pad. Murah
@@ -336,6 +347,8 @@ pub struct NoteData {
     pub velocity: f32,
     /// Panjang (tick).
     pub length: u32,
+    /// Transpose mode KEYS (semitone); 0 = nada asli pad.
+    pub pitch: i8,
 }
 
 /// Posisi transport untuk layar segmen.
@@ -434,6 +447,7 @@ pub fn pattern_notes(group: u8) -> Vec<NoteData> {
                 pad: n.pad,
                 velocity: n.velocity,
                 length: n.length,
+                pitch: n.pitch,
             })
             .collect()
     })
@@ -462,6 +476,7 @@ pub fn set_pattern_notes(group: u8, notes: Vec<NoteData>) -> bool {
                         1.0
                     },
                     length: n.length.max(1),
+                    pitch: n.pitch,
                 })
                 .collect(),
             ..lama.clone()

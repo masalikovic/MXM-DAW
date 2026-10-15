@@ -14,8 +14,12 @@ class KolomGrup extends StatelessWidget {
     required this.onPilih,
     required this.onTahan,
     this.aktif = true,
+    this.tinggi = 56,
     super.key,
   });
+
+  /// Tinggi tombol: sama dengan ukuran pad, supaya kolom setinggi kisi pad.
+  final double tinggi;
 
   /// Grup yang dipilih (0..3).
   final int grup;
@@ -54,7 +58,7 @@ class KolomGrup extends StatelessWidget {
                   onLongPress: aktif ? () => onTahan(g) : null,
                   child: SizedBox(
                     width: lebar,
-                    height: 56,
+                    height: tinggi,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

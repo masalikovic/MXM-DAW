@@ -36,6 +36,7 @@ fn render_tanpa_alokasi() {
                 pad: (i % 16) as u8,
                 velocity: 0.9,
                 length: 90,
+                pitch: 0,
             })
             .collect(),
         ..Pattern::default()
@@ -67,6 +68,11 @@ fn render_tanpa_alokasi() {
                 swing: 0.6,
                 ..SeqSettings::default()
             });
+        }
+        // Mode KEYS dan note repeat juga lewat jalur yang sama.
+        if i % 31 == 0 {
+            kirim.hit_note(i % 64, 0.9, (i % 13) as i8 - 6);
+            kirim.repeat(i % 64, 0.7, 3, if i % 62 == 0 { 0 } else { 120 });
         }
         kirim.poll_recording(30.0);
         assert_no_alloc(|| mesin.render(&mut blok, 2));

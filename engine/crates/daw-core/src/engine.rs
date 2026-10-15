@@ -63,15 +63,32 @@ pub enum TransportCommand {
 pub enum Event {
     /// Pad ditekan dengan kekuatan 0..=1.
     Hit {
-        /// Nomor pad 0..16.
+        /// Nomor pad global 0..64.
         pad: u8,
         /// Kekuatan ketukan (velocity).
         velocity: f32,
+        /// Transpose (semitone) untuk mode KEYS; 0 = nada asli.
+        pitch: i8,
     },
-    /// Pad dilepas (penting untuk mode gate dan loop).
+    /// Pad dilepas (penting untuk mode gate dan loop). Hanya suara dengan
+    /// transpose yang sama yang dilepas, supaya akor di mode KEYS tidak putus.
     Release {
         /// Nomor pad.
         pad: u8,
+        /// Transpose.
+        pitch: i8,
+    },
+    /// Note repeat (rencana §4.1): selama aktif, pad dibunyikan ulang tepat di
+    /// setiap kelipatan `rate` tick. `rate` 0 = berhenti.
+    Repeat {
+        /// Nomor pad.
+        pad: u8,
+        /// Kekuatan setiap ulangan.
+        velocity: f32,
+        /// Transpose.
+        pitch: i8,
+        /// Jarak antar-ulangan (tick; 240 = 1/16), atau 0.
+        rate: u32,
     },
     /// Parameter pad berubah.
     SetPad {
@@ -120,6 +137,8 @@ pub enum Recorded {
         pad: u8,
         /// Kekuatan.
         velocity: f32,
+        /// Transpose.
+        pitch: i8,
     },
     /// Pad dilepas pada `tick`.
     Off {
@@ -127,6 +146,8 @@ pub enum Recorded {
         tick: f64,
         /// Nomor pad.
         pad: u8,
+        /// Transpose.
+        pitch: i8,
     },
 }
 
@@ -205,10 +226,21 @@ pub struct EventSender {
     stats: Arc<EngineStats>,
     bank: PadBank,
     seq: Sequence,
-    /// Not yang sedang direkam dan menunggu "lepas", per pad.
-    terbuka: [Option<usize>; TOTAL_PADS],
+    /// Not yang sedang direkam dan menunggu "lepas": (pad global, transpose,
+    /// indeks not di pola grupnya).
+    terbuka: Vec<(usize, i8, usize)>,
     /// Jumlah perubahan model sejak dibuat (sinyal untuk simpan otomatis).
     perubahan: u64,
+}
+
+/// Nomor pad global yang sah sebagai `u8`.
+fn nomor_pad(pad: usize) -> Option<u8> {
+    u8::try_from(pad).ok().filter(|_| pad < TOTAL_PADS)
+}
+
+/// Velocity di dalam 0..=1; NaN menjadi 0.
+fn velocity_sah(v: f32) -> f32 {
+    if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }
 }
 
 impl EventSender {
@@ -219,18 +251,19 @@ impl EventSender {
 
     /// Kirim satu ketukan. `false` bila pad tidak ada atau antrean penuh.
     pub fn hit(&mut self, pad: usize, velocity: f32) -> bool {
-        let Ok(pad) = u8::try_from(pad) else {
+        self.hit_note(pad, velocity, 0)
+    }
+
+    /// Ketukan dengan transpose (mode KEYS).
+    pub fn hit_note(&mut self, pad: usize, velocity: f32, pitch: i8) -> bool {
+        let Some(pad) = nomor_pad(pad) else {
             return false;
         };
-        if usize::from(pad) >= TOTAL_PADS {
-            return false;
-        }
-        let velocity = if velocity.is_nan() {
-            0.0
-        } else {
-            velocity.clamp(0.0, 1.0)
-        };
-        let ok = self.kirim(Event::Hit { pad, velocity });
+        let ok = self.kirim(Event::Hit {
+            pad,
+            velocity: velocity_sah(velocity),
+            pitch,
+        });
         if !ok {
             self.stats.hits_dropped.fetch_add(1, Ordering::Relaxed);
         }
@@ -239,10 +272,25 @@ impl EventSender {
 
     /// Pad dilepas.
     pub fn release(&mut self, pad: usize) -> bool {
-        match u8::try_from(pad) {
-            Ok(p) if pad < TOTAL_PADS => self.kirim(Event::Release { pad: p }),
-            _ => false,
-        }
+        self.release_note(pad, 0)
+    }
+
+    /// Lepas satu nada pad (mode KEYS).
+    pub fn release_note(&mut self, pad: usize, pitch: i8) -> bool {
+        nomor_pad(pad).is_some_and(|pad| self.kirim(Event::Release { pad, pitch }))
+    }
+
+    /// Mulai (`rate` > 0, dalam tick) atau hentikan (`rate` = 0) note repeat
+    /// untuk satu nada pad.
+    pub fn repeat(&mut self, pad: usize, velocity: f32, pitch: i8, rate: u32) -> bool {
+        nomor_pad(pad).is_some_and(|pad| {
+            self.kirim(Event::Repeat {
+                pad,
+                velocity: velocity_sah(velocity),
+                pitch,
+                rate,
+            })
+        })
     }
 
     /// Ganti parameter pad. Nilai disanitasi dulu; model hanya berubah bila
@@ -316,9 +364,7 @@ impl EventSender {
         }
         self.seq.patterns[group] = pattern;
         self.perubahan += 1;
-        for pad in group * PAD_COUNT..(group + 1) * PAD_COUNT {
-            self.terbuka[pad] = None;
-        }
+        self.terbuka.retain(|t| t.0 / PAD_COUNT != group);
         self.kirim_pola(group)
     }
 
@@ -368,7 +414,7 @@ impl EventSender {
         } else {
             TransportCommand::Stop
         };
-        self.terbuka = [None; TOTAL_PADS];
+        self.terbuka.clear();
         self.kirim(Event::Transport(perintah))
     }
 
@@ -389,8 +435,11 @@ impl EventSender {
         let mut baru = 0;
         let mut berubah = [false; GROUP_COUNT];
         while let Ok(r) = self.rekaman.pop() {
-            let (tick, pad) = match r {
-                Recorded::On { tick, pad, .. } | Recorded::Off { tick, pad } => (tick, pad),
+            let (tick, pad, pitch) = match r {
+                Recorded::On {
+                    tick, pad, pitch, ..
+                }
+                | Recorded::Off { tick, pad, pitch } => (tick, pad, pitch),
             };
             let global = usize::from(pad);
             let grup = global / PAD_COUNT;
@@ -407,13 +456,19 @@ impl EventSender {
                         pad: (global % PAD_COUNT) as u8,
                         velocity,
                         length: STEP_TICKS,
+                        pitch,
                     });
-                    self.terbuka[global] = Some(pola.notes.len() - 1);
+                    self.terbuka.retain(|t| (t.0, t.1) != (global, pitch));
+                    self.terbuka.push((global, pitch, pola.notes.len() - 1));
                     baru += 1;
                     berubah[grup] = true;
                 }
                 Recorded::Off { .. } => {
-                    if let Some(i) = self.terbuka[global].take()
+                    let posisi = self
+                        .terbuka
+                        .iter()
+                        .position(|t| (t.0, t.1) == (global, pitch));
+                    if let Some(i) = posisi.map(|p| self.terbuka.remove(p).2)
                         && let Some(n) = pola.notes.get_mut(i)
                     {
                         n.length = ((ke_pola + panjang_u - n.tick) % panjang_u).max(1);
@@ -487,8 +542,32 @@ impl EventSender {
 #[derive(Clone, Copy, Debug)]
 enum Jadwal {
     Pola(Action),
-    Klik { awal_bar: bool },
+    Klik {
+        awal_bar: bool,
+    },
+    Ulang {
+        pad: u8,
+        velocity: f32,
+        pitch: i8,
+        tick: f64,
+    },
 }
+
+/// Slot note repeat yang sedang aktif.
+#[derive(Clone, Copy, Debug, Default)]
+struct Ulang {
+    pad: u8,
+    pitch: i8,
+    velocity: f32,
+    /// Jarak antar-ulangan (tick); 0 = slot kosong.
+    rate: u32,
+    /// Tick saat ulangan dimulai; ulangan pertama jatuh di grid sesudahnya
+    /// (ketukan awalnya sudah dikirim UI).
+    mulai: f64,
+}
+
+/// Note repeat yang bisa aktif bersamaan (mis. akor di mode KEYS).
+const MAKS_ULANG: usize = 16;
 
 /// Sisi thread audio: mengisi buffer.
 pub struct Engine {
@@ -501,6 +580,9 @@ pub struct Engine {
     pola: [Arc<CompiledPattern>; GROUP_COUNT],
     mute: [bool; GROUP_COUNT],
     transport: Transport,
+    /// Jam yang selalu berjalan, untuk note repeat saat transport berhenti.
+    jam: Transport,
+    ulang: [Ulang; MAKS_ULANG],
     klik: Klik,
     jadwal: Box<[(u32, Jadwal); MAKS_JADWAL]>,
     sr: f32,
@@ -539,6 +621,8 @@ impl Engine {
         let sr = sample_rate.max(1) as f32;
         let mut transport = Transport::new(sr, settings.bpm);
         transport.metronom = settings.metronome;
+        let mut jam = Transport::new(sr, settings.bpm);
+        jam.mulai(0.0, false);
         (
             Self {
                 konsumen,
@@ -550,6 +634,8 @@ impl Engine {
                 pola,
                 mute: seq.mutes,
                 transport,
+                jam,
+                ulang: [Ulang::default(); MAKS_ULANG],
                 klik: Klik::default(),
                 jadwal: Box::new([(0, Jadwal::Klik { awal_bar: false }); MAKS_JADWAL]),
                 sr,
@@ -563,7 +649,7 @@ impl Engine {
                 stats,
                 bank,
                 seq: Sequence { settings, ..seq },
-                terbuka: [None; TOTAL_PADS],
+                terbuka: Vec::new(),
                 perubahan: 0,
             },
         )
@@ -608,15 +694,39 @@ impl Engine {
                 awal = offset;
             }
             match aksi {
-                Some(Jadwal::Pola(Action::On { pad, velocity })) => {
-                    self.picu(usize::from(pad), velocity);
+                Some(Jadwal::Pola(Action::On {
+                    pad,
+                    velocity,
+                    pitch,
+                })) => {
+                    self.picu(usize::from(pad), velocity, pitch);
                 }
-                Some(Jadwal::Pola(Action::Off { pad })) => self.lepas(usize::from(pad)),
+                Some(Jadwal::Pola(Action::Off { pad, pitch })) => {
+                    self.lepas(usize::from(pad), pitch);
+                }
+                Some(Jadwal::Ulang {
+                    pad,
+                    velocity,
+                    pitch,
+                    tick,
+                }) => {
+                    self.picu(usize::from(pad), velocity, pitch);
+                    self.rekam_pada(
+                        tick,
+                        Recorded::On {
+                            tick,
+                            pad,
+                            velocity,
+                            pitch,
+                        },
+                    );
+                }
                 Some(Jadwal::Klik { awal_bar }) => self.klik.picu(awal_bar, self.sr),
                 None => {}
             }
         }
         self.transport.maju(frames as u64);
+        self.jam.maju(frames as u64);
         self.tulis_statistik();
     }
 
@@ -628,10 +738,78 @@ impl Engine {
         clippy::cast_sign_loss
     )]
     fn susun_jadwal(&mut self, frames: usize) -> usize {
-        let t = &self.transport;
-        if !t.main || frames == 0 {
+        if frames == 0 {
             return 0;
         }
+        let mut n = 0;
+        if self.transport.main {
+            n = self.jadwal_transport(frames);
+        }
+        if self.ulang.iter().any(|u| u.rate > 0) {
+            n = self.jadwal_ulang(frames, n);
+        }
+
+        // Urutkan menurut offset; insertion sort stabil, n kecil.
+        let jadwal = &mut self.jadwal[..n];
+        for i in 1..n {
+            let mut j = i;
+            while j > 0 && jadwal[j - 1].0 > jadwal[j].0 {
+                jadwal.swap(j - 1, j);
+                j -= 1;
+            }
+        }
+        n
+    }
+
+    /// Ulangan note repeat di blok ini. Saat transport berjalan, grid ulangan
+    /// mengikuti posisi lagu (dan ikut direkam); saat berhenti, mengikuti jam
+    /// bebas dengan tempo yang sama.
+    #[allow(clippy::cast_possible_truncation)]
+    fn jadwal_ulang(&mut self, frames: usize, mut jumlah: usize) -> usize {
+        let sumber = if self.transport.main {
+            &self.transport
+        } else {
+            &self.jam
+        };
+        let f0 = sumber.frame();
+        let f1 = f0 + frames as u64;
+        let lo = sumber.tick_di(f0) - sumber.tick_per_frame();
+        let hi = sumber.tick_di(f1) + sumber.tick_per_frame();
+        for u in &self.ulang {
+            if u.rate == 0 {
+                continue;
+            }
+            let jarak = f64::from(u.rate);
+            let mut ke = (lo / jarak).ceil();
+            while ke * jarak < hi {
+                let tick = ke * jarak;
+                let frame = sumber.frame_untuk(tick);
+                if tick > u.mulai + 1e-6 && (f0..f1).contains(&frame) && jumlah < MAKS_JADWAL {
+                    self.jadwal[jumlah] = (
+                        (frame - f0) as u32,
+                        Jadwal::Ulang {
+                            pad: u.pad,
+                            velocity: u.velocity,
+                            pitch: u.pitch,
+                            tick,
+                        },
+                    );
+                    jumlah += 1;
+                }
+                ke += 1.0;
+            }
+        }
+        jumlah
+    }
+
+    /// Klik metronom dan not pola di blok ini (transport berjalan).
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    fn jadwal_transport(&mut self, frames: usize) -> usize {
+        let t = &self.transport;
         let f0 = t.frame();
         let f1 = f0 + frames as u64;
         // Kandidat dicari di rentang tick yang sedikit lebih lebar; blok mana
@@ -684,15 +862,6 @@ impl Engine {
             }
         }
 
-        // Urutkan menurut offset; insertion sort stabil, n kecil.
-        let jadwal = &mut self.jadwal[..n];
-        for i in 1..n {
-            let mut j = i;
-            while j > 0 && jadwal[j - 1].0 > jadwal[j].0 {
-                jadwal.swap(j - 1, j);
-                j -= 1;
-            }
-        }
         n
     }
 
@@ -760,7 +929,7 @@ impl Engine {
     }
 
     /// Mainkan pad (dari ketukan UI atau dari pola).
-    fn picu(&mut self, pad: usize, velocity: f32) {
+    fn picu(&mut self, pad: usize, velocity: f32, pitch: i8) {
         let Some(sampel) = &self.sampel[pad] else {
             return;
         };
@@ -773,24 +942,41 @@ impl Engine {
             }
         }
         let i = self.pilih_suara();
-        self.suara[i].picu(pad, velocity, &params, sampel, self.sr);
+        self.suara[i].picu(pad, velocity, pitch, &params, sampel, self.sr);
         self.stats.hits_played.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn lepas(&mut self, pad: usize) {
+    /// Lepas suara pad dengan transpose `pitch` (akor KEYS tidak ikut putus).
+    fn lepas(&mut self, pad: usize, pitch: i8) {
         for s in self.suara.iter_mut() {
-            if s.aktif() && s.pad() == pad {
+            if s.aktif() && s.pad() == pad && s.nada() == pitch {
                 s.lepas();
             }
         }
     }
 
-    /// Kirim rekaman bila sedang merekam dan count-in sudah lewat.
+    /// Kirim rekaman bila sedang merekam dan count-in sudah lewat. Ketukan
+    /// dari UI direkam di posisi awal blok.
     fn rekam(&mut self, r: impl FnOnce(f64) -> Recorded) {
         let tick = self.transport.tick();
+        self.rekam_pada(tick, r(tick));
+    }
+
+    /// Rekam pada `tick` yang tepat (mis. ulangan note repeat).
+    fn rekam_pada(&mut self, tick: f64, r: Recorded) {
         if self.transport.main && self.transport.rekam && tick >= 0.0 {
             // Antrean penuh: ketukan tetap berbunyi, hanya tidak direkam.
-            let _ = self.rekaman.push(r(tick));
+            let _ = self.rekaman.push(r);
+        }
+    }
+
+    /// Tick sumber note repeat saat ini (transport bila berjalan, jam bila
+    /// tidak).
+    fn tick_ulang(&self) -> f64 {
+        if self.transport.main {
+            self.transport.tick()
+        } else {
+            self.jam.tick()
         }
     }
 
@@ -805,17 +991,47 @@ impl Engine {
 
     fn terapkan(&mut self, event: Event) {
         match event {
-            Event::Hit { pad, velocity } => {
-                self.picu(usize::from(pad), velocity);
+            Event::Hit {
+                pad,
+                velocity,
+                pitch,
+            } => {
+                self.picu(usize::from(pad), velocity, pitch);
                 self.rekam(|tick| Recorded::On {
                     tick,
                     pad,
                     velocity,
+                    pitch,
                 });
             }
-            Event::Release { pad } => {
-                self.lepas(usize::from(pad));
-                self.rekam(|tick| Recorded::Off { tick, pad });
+            Event::Release { pad, pitch } => {
+                self.lepas(usize::from(pad), pitch);
+                self.rekam(|tick| Recorded::Off { tick, pad, pitch });
+            }
+            Event::Repeat {
+                pad,
+                velocity,
+                pitch,
+                rate,
+            } => {
+                let sama = self
+                    .ulang
+                    .iter()
+                    .position(|u| u.rate > 0 && u.pad == pad && u.pitch == pitch);
+                if rate == 0 {
+                    if let Some(i) = sama {
+                        self.ulang[i].rate = 0;
+                    }
+                } else if let Some(i) = sama.or_else(|| self.ulang.iter().position(|u| u.rate == 0))
+                {
+                    self.ulang[i] = Ulang {
+                        pad,
+                        pitch,
+                        velocity,
+                        rate,
+                        mulai: self.tick_ulang(),
+                    };
+                }
             }
             Event::SetPad { pad, params } => self.pads[usize::from(pad)] = params,
             Event::SetSample { pad, sample } => {
@@ -843,17 +1059,30 @@ impl Engine {
                     0.0
                 };
                 self.transport.mulai(count_in, record);
+                // Sumber ulangan berpindah ke transport: grid mulai dari awal.
+                for u in &mut self.ulang {
+                    u.mulai = f64::NEG_INFINITY;
+                }
             }
             Event::Transport(TransportCommand::Stop) => {
                 self.transport.berhenti();
-                for pad in 0..TOTAL_PADS {
-                    self.lepas(pad);
+                for s in self.suara.iter_mut() {
+                    if s.aktif() {
+                        s.lepas();
+                    }
+                }
+                let sekarang = self.jam.tick();
+                for u in &mut self.ulang {
+                    u.mulai = sekarang;
                 }
             }
             Event::Transport(TransportCommand::Record(rekam)) => {
                 self.transport.rekam = rekam && self.transport.main;
             }
-            Event::SetTempo(bpm) => self.transport.atur_tempo(bpm),
+            Event::SetTempo(bpm) => {
+                self.transport.atur_tempo(bpm);
+                self.jam.atur_tempo(bpm);
+            }
             Event::SetMetronome(nyala) => self.transport.metronom = nyala,
             Event::SetMute { group, mute } => self.mute[usize::from(group)] = mute,
         }

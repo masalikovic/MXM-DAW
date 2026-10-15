@@ -96,6 +96,7 @@ fn render_demo() -> Vec<f32> {
             pad,
             velocity,
             length: panjang * STEP_TICKS,
+            pitch: 0,
         });
     };
     for bar in 0..4 {

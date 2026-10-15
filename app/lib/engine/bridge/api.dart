@@ -26,17 +26,41 @@ Future<void> audioStart() => RustLib.instance.api.crateApiAudioStart();
 /// Hentikan stream audio dan bebaskan mesin (mis. saat aplikasi ke latar).
 Future<void> audioStop() => RustLib.instance.api.crateApiAudioStop();
 
-/// Pad `pad` (0..16) ditekan dengan kekuatan 0..=1. `false` bila mesin belum
+/// Pad `pad` (nomor global 0..64) ditekan dengan kekuatan 0..=1 dan
+/// transpose `semitones` (mode KEYS; 0 = nada asli). `false` bila mesin belum
 /// berjalan atau nomor pad salah.
 ///
 /// `sync`: dipanggil langsung dari event sentuh, hanya memasukkan event ke
 /// antrean (mikrodetik), tanpa menunggu thread audio (rencana §7).
-bool padHit({required int pad, required double velocity}) =>
-    RustLib.instance.api.crateApiPadHit(pad: pad, velocity: velocity);
+bool padHit({
+  required int pad,
+  required double velocity,
+  required int semitones,
+}) => RustLib.instance.api.crateApiPadHit(
+  pad: pad,
+  velocity: velocity,
+  semitones: semitones,
+);
 
-/// Pad `pad` dilepas (penting untuk mode gate dan loop).
-bool padRelease({required int pad}) =>
-    RustLib.instance.api.crateApiPadRelease(pad: pad);
+/// Pad `pad` dengan transpose `semitones` dilepas (penting untuk mode gate
+/// dan loop).
+bool padRelease({required int pad, required int semitones}) =>
+    RustLib.instance.api.crateApiPadRelease(pad: pad, semitones: semitones);
+
+/// Note repeat (rencana §4.1): selama pad ditahan, mesin membunyikannya ulang
+/// tepat setiap `rate` tick (240 = 1/16, 160 = 1/16 triplet). `rate` 0 =
+/// berhenti. Saat merekam, ulangan ikut masuk ke pola.
+bool padRepeat({
+  required int pad,
+  required double velocity,
+  required int semitones,
+  required int rate,
+}) => RustLib.instance.api.crateApiPadRepeat(
+  pad: pad,
+  velocity: velocity,
+  semitones: semitones,
+  rate: rate,
+);
 
 /// Bit ke-`n` menyala bila pad `n` sedang berbunyi; untuk LED pad. Murah
 /// (satu baca atomik), jadi aman dipanggil 30 kali per detik. Bit ke-`n` =
@@ -286,16 +310,24 @@ class NoteData {
   /// Panjang (tick).
   final int length;
 
+  /// Transpose mode KEYS (semitone); 0 = nada asli pad.
+  final int pitch;
+
   const NoteData({
     required this.tick,
     required this.pad,
     required this.velocity,
     required this.length,
+    required this.pitch,
   });
 
   @override
   int get hashCode =>
-      tick.hashCode ^ pad.hashCode ^ velocity.hashCode ^ length.hashCode;
+      tick.hashCode ^
+      pad.hashCode ^
+      velocity.hashCode ^
+      length.hashCode ^
+      pitch.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -305,7 +337,8 @@ class NoteData {
           tick == other.tick &&
           pad == other.pad &&
           velocity == other.velocity &&
-          length == other.length;
+          length == other.length &&
+          pitch == other.pitch;
 }
 
 /// Parameter satu pad untuk layar Sound. Satuan sama dengan rencana §10.

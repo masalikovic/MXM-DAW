@@ -34,6 +34,7 @@ fn not(tick: u32, pad: u8) -> Note {
         pad,
         velocity: 1.0,
         length: 60,
+        pitch: 0,
     }
 }
 
@@ -291,6 +292,7 @@ fn stop_melepas_pad_gate() {
             bars: 1,
             notes: vec![Note {
                 length: TICKS_PER_BAR,
+                pitch: 0,
                 ..not(0, 1)
             }],
             ..Pattern::default()
@@ -374,4 +376,102 @@ fn rekaman_masuk_ke_pola_grupnya() {
     k.poll_recording(0.0);
     assert!(k.sequence().patterns[0].notes.is_empty());
     assert_eq!(k.sequence().patterns[2].notes[0].pad, 5);
+}
+
+#[test]
+fn keys_transpose_satu_oktaf_menggandakan_kecepatan() {
+    let panjang = |nada: i8| {
+        let (mut m, mut k) = Engine::new(SR);
+        let x: Vec<f32> = (0..48_000)
+            .map(|i| 0.5 * (core::f32::consts::TAU * 220.0 * i as f32 / 48_000.0).sin())
+            .collect();
+        k.set_sample(0, "SINUS", Sampel::from_f32(&x, 1, 48_000));
+        k.hit_note(0, 1.0, nada);
+        let y = render(&mut m, 60_000, 256);
+        y.iter().rposition(|v| v.abs() > 1e-3).unwrap()
+    };
+    assert!(panjang(0).abs_diff(48_000) < 100);
+    assert!(panjang(12).abs_diff(24_000) < 100);
+    assert!(
+        panjang(-12) > 59_000,
+        "satu oktaf lebih rendah = dua kali lebih lama"
+    );
+}
+
+#[test]
+fn lepas_satu_nada_tidak_memutus_akor() {
+    let (mut m, mut k) = Engine::new(SR);
+    let p = PadParams {
+        play_mode: crate::pad::PlayMode::Gate,
+        ..*k.pad(13).unwrap()
+    };
+    k.set_pad(13, &p);
+    k.hit_note(13, 1.0, 0);
+    k.hit_note(13, 1.0, 7);
+    render(&mut m, 2_000, 256);
+    assert_eq!(m.stats().voices_active(), 2);
+    k.release_note(13, 7);
+    render(&mut m, 9_600, 256);
+    assert_eq!(m.stats().voices_active(), 1, "nada 0 masih ditahan");
+}
+
+#[test]
+fn rekaman_keys_menyimpan_transpose_dan_dimainkan_ulang() {
+    let (mut m, mut k) = Engine::new(SR);
+    k.set_settings(&SeqSettings {
+        count_in_bars: 0,
+        metronome: false,
+        ..SeqSettings::default()
+    });
+    k.transport(true, true);
+    k.hit_note(13, 1.0, 5);
+    render(&mut m, 256, 256);
+    k.release_note(13, 5);
+    render(&mut m, 2_400, 256);
+    k.poll_recording(0.0);
+    let n = k.sequence().patterns[0].notes[0];
+    assert_eq!((n.pad, n.pitch), (13, 5));
+    assert!(n.length > 1, "lepas pada nada yang sama menutup not");
+}
+
+#[test]
+fn note_repeat_saat_berhenti_mengikuti_jam_bebas() {
+    // 120 BPM: 1/16 = 240 tick = 6 000 frame.
+    let (mut m, mut k) = mesin_impuls(120.0);
+    render(&mut m, 1_000, 256);
+    k.hit(0, 1.0);
+    k.repeat(0, 1.0, 0, 240);
+    let x = render(&mut m, 30_000, 256); // frame absolut 1 000 … 31 000
+    let awal: Vec<usize> = awal_bunyi(&x).iter().map(|f| f + 1_000).collect();
+    assert_eq!(awal, [1_000, 6_000, 12_000, 18_000, 24_000, 30_000]);
+
+    k.repeat(0, 1.0, 0, 0);
+    assert!(
+        awal_bunyi(&render(&mut m, 30_000, 256)).is_empty(),
+        "berhenti"
+    );
+}
+
+#[test]
+fn note_repeat_saat_merekam_masuk_ke_pola() {
+    let (mut m, mut k) = mesin_impuls(120.0);
+    k.set_settings(&SeqSettings {
+        bpm: 120.0,
+        count_in_bars: 0,
+        metronome: false,
+        ..SeqSettings::default()
+    });
+    k.transport(true, true);
+    k.hit(0, 0.8);
+    k.repeat(0, 0.8, 0, 960); // tiap ketukan
+    render(&mut m, 96_000, 256); // satu bar
+    k.repeat(0, 0.8, 0, 0);
+    k.poll_recording(0.0);
+    let mut tick: Vec<u32> = k.sequence().patterns[0]
+        .notes
+        .iter()
+        .map(|n| n.tick)
+        .collect();
+    tick.sort_unstable();
+    assert_eq!(tick, [0, 960, 1_920, 2_880]);
 }

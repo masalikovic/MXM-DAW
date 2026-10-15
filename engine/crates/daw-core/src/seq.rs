@@ -38,6 +38,8 @@ pub struct Note {
     pub velocity: f32,
     /// Panjang (tick); penting untuk pad gate dan loop.
     pub length: u32,
+    /// Transpose dalam semitone (mode KEYS); 0 = nada asli pad.
+    pub pitch: i8,
 }
 
 /// Pola satu grup.
@@ -139,11 +141,15 @@ pub enum Action {
         pad: u8,
         /// Kekuatan.
         velocity: f32,
+        /// Transpose (semitone).
+        pitch: i8,
     },
     /// Pad dilepas (akhir not).
     Off {
         /// Nomor pad.
         pad: u8,
+        /// Transpose; hanya suara dengan nada ini yang dilepas.
+        pitch: i8,
     },
 }
 
@@ -230,12 +236,14 @@ pub fn compile(pattern: &Pattern, group: usize, swing_amount: f32) -> CompiledPa
             action: Action::On {
                 pad: dasar_pad + n.pad,
                 velocity: n.velocity.clamp(0.0, 1.0),
+                pitch: n.pitch,
             },
         });
         aksi.push(Scheduled {
             tick: akhir,
             action: Action::Off {
                 pad: dasar_pad + n.pad,
+                pitch: n.pitch,
             },
         });
     }
@@ -263,6 +271,7 @@ mod tests {
             pad,
             velocity: 1.0,
             length: 120,
+            pitch: 0,
         }
     }
 
@@ -294,6 +303,7 @@ mod tests {
                 not(0, 0),
                 Note {
                     length: 480,
+                    pitch: 0,
                     ..not(TICKS_PER_BAR - 240, 2)
                 },
                 not(0, 99), // pad tidak ada: dibuang
@@ -308,7 +318,7 @@ mod tests {
         let off2 = k
             .actions
             .iter()
-            .find(|a| a.action == Action::Off { pad: 2 })
+            .find(|a| a.action == Action::Off { pad: 2, pitch: 0 })
             .unwrap();
         assert!((off2.tick - 240.0).abs() < 1e-9);
     }
@@ -359,7 +369,8 @@ mod tests {
             compile(&pola, 2, 0.5).actions[0].action,
             Action::On {
                 pad: 35,
-                velocity: 1.0
+                velocity: 1.0,
+                pitch: 0
             }
         );
     }

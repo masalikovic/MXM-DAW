@@ -211,6 +211,9 @@ struct EventJson {
     pad: u8,
     velocity: f32,
     length: u32,
+    /// Transpose mode KEYS (semitone). Ditambahkan di M4 dengan bawaan 0,
+    /// jadi berkas lama tanpa kolom ini tetap terbaca.
+    pitch: i8,
 }
 
 impl PadJson {
@@ -360,6 +363,7 @@ pub fn save(dir: &Path, bank: &PadBank, seq: &Sequence) -> Result<(), String> {
                         pad: n.pad,
                         velocity: n.velocity,
                         length: n.length,
+                        pitch: n.pitch,
                     })
                     .collect(),
             }],
@@ -522,6 +526,7 @@ fn dari_json(dir: &Path, json: &ProyekJson) -> Loaded {
                         pad: e.pad,
                         velocity: e.velocity.clamp(0.0, 1.0),
                         length: e.length.max(1),
+                        pitch: e.pitch,
                     })
                     .collect(),
             };

@@ -43,38 +43,57 @@ class LayarSegmen extends StatelessWidget {
             style: gaya.copyWith(fontSize: 26, fontWeight: FontWeight.w600),
           ),
           const SizedBox(width: 16),
+          // Setiap baris tetap satu baris (mengecil bila perlu), supaya tinggi
+          // layar segmen tidak bertambah di HP sempit.
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'BPM ${seq.bpm.toStringAsFixed(1).padLeft(5, '0')}'
-                  '   SW ${(seq.swing * 100).round()}%',
-                  style: gaya,
+                _satuBaris(
+                  Text(
+                    'BPM ${seq.bpm.toStringAsFixed(1).padLeft(5, '0')}'
+                    '   SW ${(seq.swing * 100).round()}%',
+                    style: gaya,
+                  ),
                 ),
-                Text(
-                  'POLA ${'ABCD'[grup.clamp(0, 3)]} ${seq.bars} BAR'
-                  '   NOT ${status.noteCount}',
-                  style: gaya,
+                _satuBaris(
+                  Row(
+                    children: [
+                      Text(
+                        'POLA ${'ABCD'[grup.clamp(0, 3)]} ${seq.bars} BAR'
+                        '   NOT ${status.noteCount}',
+                        style: gaya,
+                      ),
+                      if (status.recording)
+                        Text(
+                          '   ● REC',
+                          style: gaya.copyWith(
+                            color: t.displayAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                      else if (status.playing)
+                        Text(
+                          '   \u25B6\uFE0E',
+                          style: gaya.copyWith(color: t.displayAccent),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          if (status.recording)
-            Text(
-              '● REC',
-              style: gaya.copyWith(
-                color: t.displayAccent,
-                fontWeight: FontWeight.w600,
-              ),
-            )
-          else if (status.playing)
-            Text('\u25B6\uFE0E', style: gaya.copyWith(color: t.displayAccent)),
         ],
       ),
     );
   }
 }
+
+Widget _satuBaris(Widget isi) => FittedBox(
+  fit: BoxFit.scaleDown,
+  alignment: Alignment.centerLeft,
+  child: isi,
+);
 
 /// Tombol transport (rencana §6.1): dua baris di bawah pad.
 ///

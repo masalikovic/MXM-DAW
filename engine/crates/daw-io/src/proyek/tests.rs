@@ -61,12 +61,14 @@ fn model_contoh() -> (PadBank, Sequence) {
                 pad: 0,
                 velocity: 1.0,
                 length: 240,
+                pitch: 0,
             },
             Note {
                 tick: 1_013,
                 pad: 2,
                 velocity: 0.7,
                 length: 480,
+                pitch: 0,
             },
         ],
     };
@@ -75,6 +77,7 @@ fn model_contoh() -> (PadBank, Sequence) {
         pad: 8,
         velocity: 0.4,
         length: 60,
+        pitch: 0,
     });
     (bank, seq)
 }

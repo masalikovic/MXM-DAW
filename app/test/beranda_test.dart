@@ -27,14 +27,26 @@ class MesinPalsu implements MesinAudio {
   @override
   Future<void> berhenti() async => berhentiDipanggil++;
 
+  final nada = <int>[];
+
   @override
-  bool ketuk(int pad, double velocity) {
+  bool ketuk(int pad, double velocity, {int nada = 0}) {
     ketukan.add((pad, velocity));
+    this.nada.add(nada);
+    return true;
+  }
+
+  /// (pad, nada, rate) setiap panggilan note repeat.
+  final ulangan = <(int, int, int)>[];
+
+  @override
+  bool ulang(int pad, double velocity, {required int rate, int nada = 0}) {
+    ulangan.add((pad, nada, rate));
     return true;
   }
 
   @override
-  bool lepas(int pad) {
+  bool lepas(int pad, {int nada = 0}) {
     lepasan.add(pad);
     return true;
   }
@@ -399,7 +411,8 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 40));
     expect(find.text('-1.2'), findsOneWidget);
-    expect(find.text('● REC'), findsNWidgets(2), reason: 'tombol + layar');
+    expect(find.text('● REC'), findsOneWidget, reason: 'tombol');
+    expect(find.text('   ● REC'), findsOneWidget, reason: 'layar segmen');
 
     await tester.tap(find.byKey(const ValueKey('rekam')));
     expect(mesin.perintah.last, 'rekam-mati');
@@ -427,7 +440,9 @@ void main() {
     tester,
   ) async {
     final mesin = await pasang(tester)
-      ..not = [const NoteData(tick: 0, pad: 0, velocity: 1, length: 240)];
+      ..not = [
+        const NoteData(tick: 0, pad: 0, velocity: 1, length: 240, pitch: 0),
+      ];
     await tester.tap(find.byKey(const ValueKey('hapus')));
     expect(mesin.not, hasLength(1));
 
@@ -524,6 +539,70 @@ void main() {
     await tester.pump();
     expect(find.text('Proyek dibuka: sampel s3.wav hilang'), findsOneWidget);
   });
+
+  testWidgets('KEYS: semua pad memainkan pad terakhir pada nada skala', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('pad-5'))); // SUARA6
+    await tester.tap(find.byKey(const ValueKey('keys')));
+    await tester.pump();
+    expect(find.text('C3'), findsOneWidget, reason: 'label nada');
+    expect(find.text('SUARA1'), findsNothing);
+
+    // Pad 13 (kiri bawah) = C3, pad 14 = D3 di skala mayor.
+    await tester.tap(find.byKey(const ValueKey('pad-12')));
+    await tester.tap(find.byKey(const ValueKey('pad-13')));
+    expect(mesin.ketukan.skip(1).map((k) => k.$1), [5, 5]);
+    expect(mesin.nada.skip(1), [0, 2]);
+    expect(mesin.lepasan.skip(1), [5, 5]);
+
+    await tester.tap(find.byKey(const ValueKey('oktaf-tambah')));
+    await tester.tap(find.byKey(const ValueKey('skala')));
+    await tester.pump();
+    expect(find.text('MINOR'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pad-14')));
+    expect(mesin.nada.last, 12 + 3, reason: 'minor derajat 2 + satu oktaf');
+  });
+
+  testWidgets('note repeat: tahan = ulang, lepas = berhenti', (tester) async {
+    final mesin = await pasang(tester);
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(find.byKey(const ValueKey('ulang')));
+    }
+    await tester.pump();
+    expect(find.text('RPT 1/16'), findsOneWidget);
+
+    final jari = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('pad-2'))),
+    );
+    expect(mesin.ulangan, [(2, 0, 240)]);
+    await jari.up();
+    expect(mesin.ulangan.last, (2, 0, 0));
+  });
+
+  testWidgets(
+    'HP pendek 360×640 dp saat merekam: tanpa overflow, pad ≥ 48 dp',
+    (tester) async {
+      final mesin = await pasang(tester);
+      tester.view.physicalSize = const Size(1080, 1920);
+      mesin.status = const TransportState(
+        playing: true,
+        recording: true,
+        positionTicks: -2000,
+        bar: -1,
+        beat: 2,
+        step: -1,
+        noteCount: 0,
+      );
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('pad-0'))).width,
+        greaterThanOrEqualTo(48),
+      );
+    },
+  );
 
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (
     tester,
