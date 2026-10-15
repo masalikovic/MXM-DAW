@@ -268,23 +268,31 @@ fn bebaskan(mesin: *mut Engine) {
     }
 }
 
-/// Kirim satu ketukan dari UI. `false` bila mesin belum berjalan, pad tidak
-/// ada, atau antrean penuh.
-pub(crate) fn ketuk(pad: usize, velocity: f32) -> bool {
+/// Ketukan dengan transpose (mode KEYS).
+pub(crate) fn ketuk_nada(pad: usize, velocity: f32, nada: i8) -> bool {
     SISI_UI
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .as_mut()
-        .is_some_and(|ui| ui.pengirim.hit(pad, velocity))
+        .is_some_and(|ui| ui.pengirim.hit_note(pad, velocity, nada))
 }
 
-/// Lepas pad dari UI. `false` bila mesin belum berjalan atau pad tidak ada.
-pub(crate) fn lepas(pad: usize) -> bool {
+/// Lepas satu nada pad.
+pub(crate) fn lepas_nada(pad: usize, nada: i8) -> bool {
     SISI_UI
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .as_mut()
-        .is_some_and(|ui| ui.pengirim.release(pad))
+        .is_some_and(|ui| ui.pengirim.release_note(pad, nada))
+}
+
+/// Mulai/hentikan note repeat.
+pub(crate) fn ulang(pad: usize, velocity: f32, nada: i8, rate: u32) -> bool {
+    SISI_UI
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+        .is_some_and(|ui| ui.pengirim.repeat(pad, velocity, nada, rate))
 }
 
 /// Bitmask 16 pad grup `grup` yang sedang berbunyi (0 bila mesin belum
@@ -412,8 +420,8 @@ pub(crate) use adapter::{berhenti, kesehatan, mulai};
 #[cfg(test)]
 mod tests {
     use super::{
-        Sampel, atur_pad, atur_sampel, baca, ketuk, lepas, lepas_mesin, mxm_engine_render,
-        nama_pad, pad_berbunyi, pasang_mesin, statistik,
+        Sampel, atur_pad, atur_sampel, baca, ketuk_nada, lepas_mesin, lepas_nada,
+        mxm_engine_render, nama_pad, pad_berbunyi, pasang_mesin, statistik,
     };
     use crate::api::{
         NoteData, SeqConfig, group_mutes, project_load, project_revision, project_save, seq_config,
@@ -458,21 +466,21 @@ mod tests {
     fn alur_lengkap_lewat_ffi() {
         // Tanpa mesin: buffer diisi hening, ketukan ditolak.
         assert!(render(64).iter().all(|&v| v == 0.0));
-        assert!(!ketuk(0, 1.0));
-        assert!(!lepas(0));
+        assert!(!ketuk_nada(0, 1.0, 0));
+        assert!(!lepas_nada(0, 0));
         assert_eq!(pad_berbunyi(0), 0);
         assert_eq!(nama_pad()[0], "KICK", "nama kit pabrik walau mesin mati");
 
         pasang_mesin();
-        assert!(ketuk(0, 1.0));
-        assert!(ketuk(13, 1.0));
-        assert!(ketuk(16, 1.0), "pad 1 grup B");
-        assert!(!ketuk(64, 1.0), "pad 65 tidak ada");
+        assert!(ketuk_nada(0, 1.0, 0));
+        assert!(ketuk_nada(13, 1.0, 0));
+        assert!(ketuk_nada(16, 1.0, 0), "pad 1 grup B");
+        assert!(!ketuk_nada(64, 1.0, 0), "pad 65 tidak ada");
         let x = render(2_400);
         assert!(x.iter().any(|v| v.abs() > 0.3), "kick tidak berbunyi");
         assert_eq!(statistik().1, 3);
         assert_eq!(pad_berbunyi(0), (1 << 0) | (1 << 13));
-        assert!(lepas(13));
+        assert!(lepas_nada(13, 0));
         assert_eq!(nama_pad().len(), 64);
 
         // Suntingan saat berjalan bertahan setelah mesin dilepas dan dipasang lagi.
@@ -480,7 +488,7 @@ mod tests {
         p.pitch = 5.0;
         assert!(atur_pad(3, &p));
         lepas_mesin();
-        assert!(!ketuk(0, 1.0));
+        assert!(!ketuk_nada(0, 1.0, 0));
         assert!(render(64).iter().all(|&v| v == 0.0));
         assert!((baca(|b| b.params(3).unwrap().pitch) - 5.0).abs() < f32::EPSILON);
         assert!(atur_sampel(
@@ -498,7 +506,7 @@ mod tests {
         assert_eq!(nama_pad()[7], "VOKAL-SA");
         assert!(crate::api::pad_import_wav(7, "x.wav".to_owned(), vec![1, 2, 3]).is_err());
         assert!(crate::api::pad_import_wav(64, "x.wav".to_owned(), wav_pendek()).is_err());
-        assert!(ketuk(7, 1.0));
+        assert!(ketuk_nada(7, 1.0, 0));
         assert!(
             render(512).iter().any(|v| v.abs() > 0.1),
             "sampel impor berbunyi"
@@ -524,6 +532,7 @@ mod tests {
             pad: 0,
             velocity: 1.0,
             length: 240,
+            pitch: 0,
         };
         assert!(set_pattern_notes(2, vec![not(0), not(99_999)]));
         assert_eq!(transport_state(2).note_count, 1, "not di luar pola dibuang");
@@ -533,7 +542,7 @@ mod tests {
         let st = transport_state(2);
         assert!(st.playing && st.recording);
         assert_eq!((st.bar, st.beat, st.step), (1, 2, 4));
-        assert!(ketuk(2 * 16 + 5, 0.8)); // grup C, direkam di tick 960
+        assert!(ketuk_nada(2 * 16 + 5, 0.8, 0)); // grup C, direkam di tick 960
         render(256);
         assert_eq!(transport_state(2).note_count, 2);
         assert_eq!(transport_state(0).note_count, 0);

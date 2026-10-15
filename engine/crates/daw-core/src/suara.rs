@@ -22,6 +22,8 @@ const WAKTU_EKOR: f32 = 0.002;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Suara {
     pad: u8,
+    /// Transpose (semitone) dari mode KEYS, ditambahkan ke pitch pad.
+    nada: i8,
     aktif: bool,
     umur: u32,
     /// Posisi baca (frame sampel, pecahan untuk interpolasi).
@@ -55,6 +57,12 @@ impl Suara {
         usize::from(self.pad)
     }
 
+    /// Transpose suara ini (semitone).
+    #[must_use]
+    pub fn nada(&self) -> i8 {
+        self.nada
+    }
+
     /// Masih berbunyi (tidak termasuk ekor).
     #[must_use]
     pub fn aktif(&self) -> bool {
@@ -75,12 +83,21 @@ impl Suara {
 
     /// Mulai memainkan `pad`. Bila suara ini sedang berbunyi (dicuri), bunyi
     /// lamanya dipudarkan dalam ±2 ms, bukan diputus.
-    pub fn picu(&mut self, pad: usize, velocity: f32, p: &PadParams, sampel: &Sampel, sr: f32) {
+    pub fn picu(
+        &mut self,
+        pad: usize,
+        velocity: f32,
+        nada: i8,
+        p: &PadParams,
+        sampel: &Sampel,
+        sr: f32,
+    ) {
         if self.aktif {
             self.ekor.0 += self.terakhir.0;
             self.ekor.1 += self.terakhir.1;
         }
         self.pad = u8::try_from(pad).unwrap_or(0);
+        self.nada = nada;
         self.aktif = sampel.frames() > 1;
         self.umur = 0;
         self.dilepas = false;
@@ -101,7 +118,8 @@ impl Suara {
         self.awal = f64::from(p.start).min((self.akhir - 1.0).max(0.0));
         self.mode = p.play_mode;
         let rasio = f64::from(sampel.sample_rate()) / f64::from(sr);
-        self.langkah = 2.0_f64.powf(f64::from(p.pitch) / 12.0) * rasio;
+        let pitch = f64::from(p.pitch) + f64::from(self.nada);
+        self.langkah = 2.0_f64.powf(pitch / 12.0) * rasio;
         self.adsr.atur(&p.envelope, sr);
         self.koef = SvfKoef::dari_cutoff(p.filter.mode, p.filter.cutoff, p.filter.resonance, sr);
 

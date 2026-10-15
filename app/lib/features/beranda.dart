@@ -8,6 +8,8 @@ import '../engine/engine.dart';
 import '../engine/proyek.dart';
 import '../engine/simpan_otomatis.dart';
 import 'grup.dart';
+import 'keys/keys.dart';
+import 'keys/panel_keys.dart';
 import 'pad_grid.dart';
 import 'pola/halaman_pola.dart';
 import 'suara/halaman_suara.dart';
@@ -67,6 +69,15 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   /// Pad terakhir yang diketuk (lokal 0..15); dipilih saat halaman Pola
   /// dibuka.
   int _padTerakhir = 0;
+
+  /// Mode KEYS: semua pad memainkan [_padKeys] (nomor global) pada nada skala.
+  bool _keys = false;
+  int _padKeys = 0;
+  int _oktaf = 0;
+  Skala _skala = Skala.mayor;
+
+  /// Note repeat (tick); 0 = mati.
+  int _rate = 0;
   final _tapTempo = TapTempo();
   final _jam = Stopwatch()..start();
 
@@ -166,6 +177,48 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   /// Nama 16 pad grup terpilih.
   List<String> get _namaGrup =>
       _nama.skip(_grup * 16).take(16).toList(growable: false);
+
+  /// Label pad: nama suara, atau nama nada saat KEYS.
+  List<String> get _labelPad => _keys
+      ? [
+          for (var p = 0; p < 16; p++)
+            Keys.namaNada(Keys.nada(p, _skala, _oktaf)),
+        ]
+      : _namaGrup;
+
+  /// (pad global, transpose) yang dibunyikan pad lokal.
+  (int, int) _sasaran(int pad) =>
+      _keys ? (_padKeys, Keys.nada(pad, _skala, _oktaf)) : (_global(pad), 0);
+
+  void _tekanPad(int pad, double v) {
+    final audio = widget.audio;
+    if (audio == null) return;
+    if (!_keys) _padTerakhir = pad;
+    final (sasaran, nada) = _sasaran(pad);
+    audio.ketuk(sasaran, v, nada: nada);
+    if (_rate > 0) audio.ulang(sasaran, v, nada: nada, rate: _rate);
+  }
+
+  void _lepasPad(int pad) {
+    final audio = widget.audio;
+    if (audio == null) return;
+    final (sasaran, nada) = _sasaran(pad);
+    audio.lepas(sasaran, nada: nada);
+    if (_rate > 0) audio.ulang(sasaran, 0, nada: nada, rate: 0);
+  }
+
+  /// KEYS memainkan pad yang terakhir diketuk.
+  void _alihKeys() => setState(() {
+    _keys = !_keys;
+    if (_keys) _padKeys = _global(_padTerakhir);
+  });
+
+  void _gantiRate() {
+    final pilihan = pilihanUlang.values.toList();
+    setState(
+      () => _rate = pilihan[(pilihan.indexOf(_rate) + 1) % pilihan.length],
+    );
+  }
 
   void _pilihGrup(int grup) {
     setState(() {
@@ -286,16 +339,27 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'MXM-DAW',
-                style: TextStyle(
-                  color: t.legendOnLight,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 2,
-                ),
+              // Satu baris: ruang vertikal dipakai untuk pad (HP pendek).
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    'MXM-DAW',
+                    style: TextStyle(
+                      color: t.legendOnLight,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    versi,
+                    style: TextStyle(color: t.textMuted, fontSize: 12),
+                  ),
+                ],
               ),
-              Text(versi, style: TextStyle(color: t.textMuted, fontSize: 13)),
               if (widget.engine case EngineUnavailable(:final reason))
                 Text(
                   reason,
@@ -311,37 +375,60 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                 const SizedBox(height: 8),
                 LayarSegmen(grup: _grup, status: _status, seq: seq),
               ],
-              const Spacer(),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  KolomGrup(
-                    aktif: widget.audio != null,
-                    grup: _grup,
-                    mute: _mute,
-                    onPilih: _pilihGrup,
-                    onTahan: _alihMute,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Center(
-                      child: KisiPad(
-                        aktif: widget.audio != null,
-                        grup: _grup,
-                        nama: _namaGrup,
-                        berbunyi: _berbunyi,
-                        onKetuk: (pad, v) {
-                          _padTerakhir = pad;
-                          widget.audio?.ketuk(_global(pad), v);
-                        },
-                        onLepas: (pad) => widget.audio?.lepas(_global(pad)),
-                        onTahan: widget.audio == null ? null : _bukaSuara,
+              // Pad mengisi ruang yang tersisa: ukurannya dihitung dari lebar
+              // **dan** tinggi, supaya HP yang pendek tidak terpotong.
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, batas) {
+                    final ukuran = KisiPad.ukuranUntukRuang(
+                      batas.maxWidth - KolomGrup.lebar - 8,
+                      batas.maxHeight - 16,
+                    );
+                    return Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          KolomGrup(
+                            aktif: widget.audio != null,
+                            grup: _grup,
+                            mute: _mute,
+                            tinggi: ukuran,
+                            onPilih: _pilihGrup,
+                            onTahan: _alihMute,
+                          ),
+                          const SizedBox(width: 8),
+                          KisiPad(
+                            ukuran: ukuran,
+                            aktif: widget.audio != null,
+                            grup: _grup,
+                            nama: _labelPad,
+                            // LED menunjukkan pad yang berbunyi; di mode KEYS satu
+                            // suara dimainkan dari banyak pad, jadi LED dimatikan.
+                            berbunyi: _keys ? 0 : _berbunyi,
+                            onKetuk: _tekanPad,
+                            onLepas: _lepasPad,
+                            onTahan: widget.audio == null || _keys
+                                ? null
+                                : _bukaSuara,
+                          ),
+                        ],
                       ),
-                    ),
-                  ),
-                ],
+                    );
+                  },
+                ),
               ),
-              const Spacer(),
+              PanelKeys(
+                aktif: widget.audio != null,
+                keys: _keys,
+                oktaf: _oktaf,
+                skala: _skala,
+                rate: _rate,
+                onKeys: _alihKeys,
+                onOktaf: (o) => setState(() => _oktaf = o),
+                onSkala: () => setState(() => _skala = _skala.berikut),
+                onRate: _gantiRate,
+              ),
+              const SizedBox(height: 8),
               if (_seq case final seq?)
                 PanelTransport(
                   aktif: widget.audio != null,

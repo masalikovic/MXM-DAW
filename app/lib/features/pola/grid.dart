@@ -40,6 +40,7 @@ abstract final class GridLangkah {
         pad: pad,
         velocity: velocityBawaan,
         length: tickLangkah,
+        pitch: 0,
       ),
     ];
   }
@@ -63,6 +64,7 @@ abstract final class GridLangkah {
             pad: n.pad,
             velocity: berikut,
             length: n.length,
+            pitch: n.pitch,
           )
         else
           n,

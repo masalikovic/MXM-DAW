@@ -15,10 +15,14 @@ class KisiPad extends StatelessWidget {
     required this.onLepas,
     this.onTahan,
     this.grup = 0,
+    this.ukuran,
     super.key,
   });
 
   final bool aktif;
+
+  /// Ukuran pad yang sudah dihitung pemanggil; `null` = dari lebar saja.
+  final double? ukuran;
 
   /// Grup yang ditampilkan (0..3): menentukan warna LED.
   final int grup;
@@ -42,11 +46,18 @@ class KisiPad extends StatelessWidget {
   static double ukuranUntuk(double lebar) =>
       ((lebar - 3 * jarak) / 4).clamp(ukuranMin, ukuranMaks);
 
+  /// Ukuran pad yang muat di ruang `lebar` × `tinggi` (tetap 48–72 dp).
+  static double ukuranUntukRuang(double lebar, double tinggi) =>
+      ((tinggi - 3 * jarak) / 4).clamp(ukuranMin, ukuranMaks) <
+          ukuranUntuk(lebar)
+      ? ((tinggi - 3 * jarak) / 4).clamp(ukuranMin, ukuranMaks)
+      : ukuranUntuk(lebar);
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, batas) {
-        final ukuran = ukuranUntuk(batas.maxWidth);
+        final ukuran = this.ukuran ?? ukuranUntuk(batas.maxWidth);
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
