@@ -42,6 +42,7 @@ ADR 0001–0008 berasal dari tabel keputusan inti di
 | [0013](0013-mesin-real-time.md) | Bentuk mesin real-time: antrean bebas-lock, render tanpa alokasi | Diterima |
 | [0014](0014-sampler-dan-memori-sampel.md) | Sampler: model pad di Rust, sampel dibebaskan di thread UI | Diterima |
 | [0015](0015-sequencer.md) | Sequencer: pola mentah di UI, jadwal tepat-sampel di thread audio | Diterima |
+| [0016](0016-proyek-dan-simpan-otomatis.md) | Berkas proyek dan simpan otomatis | Diterima |
 
 ## Template
 

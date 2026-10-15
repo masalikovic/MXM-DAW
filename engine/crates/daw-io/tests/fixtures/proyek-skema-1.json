@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "Beat Sore",
+  "bpm": 96.0,
+  "swing": 0.56,
+  "kolom_dari_masa_depan": true,
+  "groups": [
+    {
+      "id": "A",
+      "mute": false,
+      "pads": [
+        { "index": 0, "name": "KICK", "sample": "factory:KICK" },
+        {
+          "index": 1,
+          "name": "SNARE",
+          "sample": "factory:SNARE",
+          "pitch": -2.0,
+          "envelope": { "attack": 0.001, "decay": 0.2, "sustain": 0.0, "release": 0.05 },
+          "filter": { "mode": "lp", "cutoff": 0.7, "resonance": 0.2 },
+          "play_mode": "gate",
+          "choke": 0
+        }
+      ],
+      "patterns": [
+        {
+          "index": 1,
+          "bars": 2,
+          "quantize": { "grid": 240, "strength": 1.0 },
+          "events": [
+            { "tick": 0, "pad": 0, "velocity": 1.0, "length": 240 },
+            { "tick": 960, "pad": 1, "velocity": 0.9, "length": 240 },
+            { "tick": 1920, "pad": 0, "velocity": 1.0, "length": 240 }
+          ]
+        }
+      ]
+    }
+  ]
+}

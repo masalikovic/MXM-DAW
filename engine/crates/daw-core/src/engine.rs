@@ -207,6 +207,8 @@ pub struct EventSender {
     seq: Sequence,
     /// Not yang sedang direkam dan menunggu "lepas", per pad.
     terbuka: [Option<usize>; TOTAL_PADS],
+    /// Jumlah perubahan model sejak dibuat (sinyal untuk simpan otomatis).
+    perubahan: u64,
 }
 
 impl EventSender {
@@ -253,6 +255,7 @@ impl EventSender {
         let ok = self.kirim(Event::SetPad { pad: p, params });
         if ok {
             self.bank.set_params(pad, &params);
+            self.perubahan += 1;
         }
         ok
     }
@@ -271,6 +274,7 @@ impl EventSender {
             return false;
         }
         let params = self.bank.set_sample(pad, name, sample);
+        self.perubahan += 1;
         params.is_some_and(|params| self.kirim(Event::SetPad { pad: p, params }))
     }
 
@@ -311,6 +315,7 @@ impl EventSender {
             return false;
         }
         self.seq.patterns[group] = pattern;
+        self.perubahan += 1;
         for pad in group * PAD_COUNT..(group + 1) * PAD_COUNT {
             self.terbuka[pad] = None;
         }
@@ -325,6 +330,7 @@ impl EventSender {
         let ok = self.kirim(Event::SetMute { group: g, mute });
         if ok {
             self.seq.mutes[group] = mute;
+            self.perubahan += 1;
         }
         ok
     }
@@ -334,6 +340,9 @@ impl EventSender {
         let baru = settings.sanitized();
         let lama = self.seq.settings;
         self.seq.settings = baru;
+        if baru != lama {
+            self.perubahan += 1;
+        }
         let mut ok = true;
         if baru.bpm.to_bits() != lama.bpm.to_bits() {
             ok &= self.kirim(Event::SetTempo(baru.bpm));
@@ -415,6 +424,7 @@ impl EventSender {
         }
         for (g, ya) in berubah.into_iter().enumerate() {
             if ya {
+                self.perubahan += 1;
                 self.kirim_pola(g);
             }
         }
@@ -463,6 +473,13 @@ impl EventSender {
     #[must_use]
     pub fn stats(&self) -> &Arc<EngineStats> {
         &self.stats
+    }
+
+    /// Jumlah perubahan model sejak pengirim ini dibuat. Naik setiap kali
+    /// pad, sampel, pola, mute, atau pengaturan berubah, termasuk rekaman.
+    #[must_use]
+    pub fn changes(&self) -> u64 {
+        self.perubahan
     }
 }
 
@@ -547,6 +564,7 @@ impl Engine {
                 bank,
                 seq: Sequence { settings, ..seq },
                 terbuka: [None; TOTAL_PADS],
+                perubahan: 0,
             },
         )
     }

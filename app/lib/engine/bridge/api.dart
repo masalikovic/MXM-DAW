@@ -129,6 +129,30 @@ bool transportRecord({required bool enabled}) =>
 TransportState transportState({required int group}) =>
     RustLib.instance.api.crateApiTransportState(group: group);
 
+/// Buka proyek dari folder `dir` (folder data pribadi aplikasi) sebelum mesin
+/// dimulai. Mengembalikan peringatan (mis. sampel hilang); daftar kosong bila
+/// semua pulih atau belum ada proyek.
+///
+/// # Errors
+/// Pesan untuk pengguna bila proyek tidak bisa dibuka. Bila proyek dibuat
+/// versi aplikasi yang lebih baru, simpan otomatis **diblokir** supaya berkas
+/// itu tidak tertimpa.
+Future<List<String>> projectLoad({required String dir}) =>
+    RustLib.instance.api.crateApiProjectLoad(dir: dir);
+
+/// Simpan model ke folder `dir` secara atomik. Tidak `sync`: menulis sampel
+/// impor ke disk bisa memakan waktu, jadi dijalankan di thread pekerja.
+///
+/// # Errors
+/// Pesan untuk pengguna bila disk penuh, atau simpan diblokir.
+Future<void> projectSave({required String dir}) =>
+    RustLib.instance.api.crateApiProjectSave(dir: dir);
+
+/// Revisi model; naik setiap kali ada perubahan. Simpan otomatis membandingkan
+/// angka ini dengan revisi yang terakhir disimpan.
+PlatformInt64 projectRevision() =>
+    RustLib.instance.api.crateApiProjectRevision();
+
 /// Angka kesehatan mesin saat ini.
 AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
 

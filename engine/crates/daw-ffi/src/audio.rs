@@ -8,7 +8,7 @@
 //!   `close()` Oboe menjamin tidak ada callback lagi.
 
 use std::ptr;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use daw_core::bank::PadBank;
@@ -27,6 +27,17 @@ static SISI_UI: Mutex<Option<SisiUi>> = Mutex::new(None);
 static BANK: Mutex<Option<PadBank>> = Mutex::new(None);
 /// Pola dan pengaturan sequencer saat mesin tidak berjalan.
 static SEKUENS: Mutex<Option<Sequence>> = Mutex::new(None);
+/// Perubahan model yang terjadi tanpa mesin, ditambah perubahan dari mesin
+/// yang sudah dilepas. Bersama `EventSender::changes` membentuk revisi yang
+/// hanya naik (sinyal simpan otomatis).
+static REVISI_DASAR: AtomicU64 = AtomicU64::new(0);
+/// Simpan diblokir: proyek di disk dibuat versi aplikasi yang lebih baru dan
+/// tidak boleh ditimpa.
+static SIMPAN_DIBLOKIR: AtomicBool = AtomicBool::new(false);
+
+fn naikkan_revisi() {
+    REVISI_DASAR.fetch_add(1, Ordering::Relaxed);
+}
 
 struct SisiUi {
     pengirim: EventSender,
@@ -86,6 +97,7 @@ pub(crate) fn lepas_mesin() {
         .unwrap_or_else(PoisonError::into_inner)
         .take();
     if let Some(ui) = ui {
+        REVISI_DASAR.fetch_add(ui.pengirim.changes(), Ordering::Relaxed);
         let (bank, seq) = ui.pengirim.into_model();
         *kunci_bank() = Some(bank);
         *kunci_sekuens() = Some(seq);
@@ -117,6 +129,7 @@ pub(crate) fn atur_pad(pad: usize, params: &PadParams) -> bool {
     if let Some(ui) = ui.as_mut() {
         return ui.pengirim.set_pad(pad, params);
     }
+    naikkan_revisi();
     let mut bank = kunci_bank();
     bank.get_or_insert_with(PadBank::factory)
         .set_params(pad, params)
@@ -146,6 +159,7 @@ pub(crate) fn atur_seq(pola: Option<(usize, Pattern)>, pengaturan: Option<SeqSet
         }
         return ok;
     }
+    naikkan_revisi();
     let mut seq = kunci_sekuens();
     let seq = seq.get_or_insert_with(Sequence::default);
     if let Some(p) = pengaturan {
@@ -158,6 +172,48 @@ pub(crate) fn atur_seq(pola: Option<(usize, Pattern)>, pengaturan: Option<SeqSet
         *tujuan = p;
     }
     true
+}
+
+/// Revisi model: naik setiap kali pad, sampel, pola, mute, atau pengaturan
+/// berubah (termasuk rekaman).
+pub(crate) fn revisi() -> u64 {
+    let ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    REVISI_DASAR.load(Ordering::Relaxed) + ui.as_ref().map_or(0, |ui| ui.pengirim.changes())
+}
+
+/// Salinan model untuk disimpan. Murah: sampel dibagi lewat `Arc`.
+pub(crate) fn salinan_model() -> (PadBank, Sequence) {
+    let ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_ref() {
+        return (ui.pengirim.bank().clone(), ui.pengirim.sequence().clone());
+    }
+    drop(ui);
+    let bank = kunci_bank().get_or_insert_with(PadBank::factory).clone();
+    let seq = kunci_sekuens()
+        .get_or_insert_with(Sequence::default)
+        .clone();
+    (bank, seq)
+}
+
+/// Pasang model hasil membuka proyek. Hanya saat mesin belum berjalan, supaya
+/// tidak ada dua sumber kebenaran.
+pub(crate) fn pasang_model(bank: PadBank, seq: Sequence) -> bool {
+    let ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if ui.is_some() {
+        return false;
+    }
+    *kunci_bank() = Some(bank);
+    *kunci_sekuens() = Some(seq);
+    true
+}
+
+/// Blokir atau izinkan simpan.
+pub(crate) fn blokir_simpan(blokir: bool) {
+    SIMPAN_DIBLOKIR.store(blokir, Ordering::Relaxed);
+}
+
+pub(crate) fn simpan_diblokir() -> bool {
+    SIMPAN_DIBLOKIR.load(Ordering::Relaxed)
 }
 
 /// Perintah transport; `false` bila mesin belum berjalan.
@@ -197,6 +253,7 @@ pub(crate) fn atur_sampel(pad: usize, nama: &str, sampel: Sampel) -> bool {
     if let Some(ui) = ui.as_mut() {
         return ui.pengirim.set_sample(pad, nama, sampel);
     }
+    naikkan_revisi();
     let mut bank = kunci_bank();
     bank.get_or_insert_with(PadBank::factory)
         .set_sample(pad, nama, std::sync::Arc::new(sampel))
@@ -249,6 +306,7 @@ pub(crate) fn atur_mute(grup: usize, mute: bool) -> bool {
     if let Some(ui) = ui.as_mut() {
         return ui.pengirim.set_mute(grup, mute);
     }
+    naikkan_revisi();
     let mut seq = kunci_sekuens();
     seq.get_or_insert_with(Sequence::default)
         .mutes
@@ -358,8 +416,9 @@ mod tests {
         nama_pad, pad_berbunyi, pasang_mesin, statistik,
     };
     use crate::api::{
-        NoteData, SeqConfig, group_mutes, seq_config, set_group_mute, set_pattern_notes,
-        set_seq_config, transport_play, transport_state, transport_stop,
+        NoteData, SeqConfig, group_mutes, project_load, project_revision, project_save, seq_config,
+        set_group_mute, set_pattern_notes, set_seq_config, transport_play, transport_state,
+        transport_stop,
     };
 
     /// 0,1 detik sinus 441 Hz, 44,1 kHz mono 16-bit.
@@ -392,8 +451,10 @@ mod tests {
         buf
     }
 
-    // Satu tes saja: state global (MESIN) dipakai bersama oleh semua tes.
+    // Satu tes panjang, bukan banyak tes pendek: state global (MESIN, BANK,
+    // SEKUENS) dipakai bersama, dan tes Rust berjalan paralel.
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn alur_lengkap_lewat_ffi() {
         // Tanpa mesin: buffer diisi hening, ketukan ditolak.
         assert!(render(64).iter().all(|&v| v == 0.0));
@@ -489,5 +550,50 @@ mod tests {
         assert_eq!(seq_config(2).bars, 2);
         assert_eq!(group_mutes(), [false, false, true, false]);
         assert!(!transport_play(false), "tanpa mesin tidak bisa main");
+
+        // Proyek: simpan, ubah, buka lagi → kembali ke yang disimpan.
+        let dir = std::env::temp_dir().join(format!("mxm-daw-ffi-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let d = dir.to_string_lossy().into_owned();
+        let r0 = project_revision();
+        assert!(project_save(d.clone()).is_ok());
+        let mut p = baca(|b| *b.params(3).unwrap());
+        p.pitch = -9.0;
+        assert!(atur_pad(3, &p));
+        assert!(
+            project_revision() > r0,
+            "perubahan tanpa mesin menaikkan revisi"
+        );
+        assert_eq!(project_load(d.clone()), Ok(Vec::new()));
+        assert!((baca(|b| b.params(3).unwrap().pitch) - 5.0).abs() < f32::EPSILON);
+        assert_eq!(seq_config(2).bars, 2, "pola grup C ikut pulih");
+        assert_eq!(nama_pad()[7], "VOKAL-SA", "sampel impor ikut pulih");
+
+        // Revisi tetap naik saat mesin berjalan dan sesudah dilepas.
+        pasang_mesin();
+        let r1 = project_revision();
+        assert!(atur_pad(3, &p));
+        assert!(project_revision() > r1);
+        assert!(
+            project_load(d.clone()).is_err(),
+            "tidak boleh saat mesin berjalan"
+        );
+        lepas_mesin();
+        assert!(
+            project_revision() > r1,
+            "revisi tidak mundur setelah mesin dilepas"
+        );
+
+        // Proyek dari versi lebih baru: ditolak, dan simpan diblokir.
+        std::fs::write(dir.join("project.json"), b"{\"schema\": 99}").unwrap();
+        assert!(project_load(d.clone()).unwrap_err().contains("lebih baru"));
+        assert!(project_save(d).unwrap_err().contains("diblokir"));
+        assert_eq!(
+            std::fs::read(dir.join("project.json")).unwrap(),
+            b"{\"schema\": 99}",
+            "berkas versi baru tidak tertimpa"
+        );
+        crate::audio::blokir_simpan(false);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
