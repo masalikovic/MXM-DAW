@@ -6,8 +6,15 @@ import '../../engine/audio.dart';
 /// Layar segmen (rencana §5.4, §6.1): posisi BAR.BEAT, tempo, panjang pola,
 /// dan status rekam. Saat count-in, bar ditampilkan negatif (−1.1 … −1.4).
 class LayarSegmen extends StatelessWidget {
-  const LayarSegmen({required this.status, required this.seq, super.key});
+  const LayarSegmen({
+    required this.status,
+    required this.seq,
+    this.grup = 0,
+    super.key,
+  });
 
+  /// Grup yang ditampilkan (0..3); posisi dan jumlah not mengikuti polanya.
+  final int grup;
   final TransportState status;
   final SeqConfig seq;
 
@@ -46,7 +53,8 @@ class LayarSegmen extends StatelessWidget {
                   style: gaya,
                 ),
                 Text(
-                  'POLA ${seq.bars} BAR   NOT ${status.noteCount}',
+                  'POLA ${'ABCD'[grup.clamp(0, 3)]} ${seq.bars} BAR'
+                  '   NOT ${status.noteCount}',
                   style: gaya,
                 ),
               ],

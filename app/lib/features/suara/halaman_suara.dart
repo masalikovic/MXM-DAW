@@ -90,7 +90,11 @@ class _HalamanSuaraState extends State<HalamanSuara> {
     );
     return Scaffold(
       appBar: AppBar(
-        title: Text('A:${(widget.pad + 1).toString().padLeft(2, '0')}  $_nama'),
+        // Nomor pad global → "B:07".
+        title: Text(
+          '${'ABCD'[(widget.pad ~/ 16).clamp(0, 3)]}:'
+          '${(widget.pad % 16 + 1).toString().padLeft(2, '0')}  $_nama',
+        ),
         actions: [
           TextButton.icon(
             key: const ValueKey('impor'),

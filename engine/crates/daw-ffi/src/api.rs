@@ -92,14 +92,15 @@ pub fn pad_release(pad: u8) -> bool {
 }
 
 /// Bit ke-`n` menyala bila pad `n` sedang berbunyi; untuk LED pad. Murah
-/// (satu baca atomik), jadi aman dipanggil 30 kali per detik.
+/// (satu baca atomik), jadi aman dipanggil 30 kali per detik. Bit ke-`n` =
+/// pad `n` di grup `group` (0..4).
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn pads_sounding() -> u32 {
-    crate::audio::pad_berbunyi()
+pub fn pads_sounding(group: u8) -> u32 {
+    crate::audio::pad_berbunyi(usize::from(group))
 }
 
-/// Nama suara ke-16 pad, mis. `"KICK"`.
+/// Nama suara ke-64 pad (nomor global = grup × 16 + pad), mis. `"KICK"`.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
 pub fn pad_names() -> Vec<String> {
@@ -356,18 +357,26 @@ pub struct TransportState {
     pub note_count: u32,
 }
 
-/// Pengaturan sequencer dan pola saat ini.
+/// Grup 0..4; nilai di luar jangkauan dibatasi ke grup D.
+fn grup(group: u8) -> usize {
+    usize::from(group).min(daw_core::pad::GROUP_COUNT - 1)
+}
+
+/// Pengaturan sequencer dan pola grup `group` saat ini.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn seq_config() -> SeqConfig {
-    crate::audio::baca_seq(|q| SeqConfig {
-        bpm: q.settings.bpm,
-        swing: q.settings.swing,
-        metronome: q.settings.metronome,
-        count_in_bars: q.settings.count_in_bars,
-        bars: q.pattern.bars,
-        quantize_grid: q.pattern.quantize_grid,
-        quantize_strength: q.pattern.quantize_strength,
+pub fn seq_config(group: u8) -> SeqConfig {
+    crate::audio::baca_seq(|q| {
+        let p = &q.patterns[grup(group)];
+        SeqConfig {
+            bpm: q.settings.bpm,
+            swing: q.settings.swing,
+            metronome: q.settings.metronome,
+            count_in_bars: q.settings.count_in_bars,
+            bars: p.bars,
+            quantize_grid: p.quantize_grid,
+            quantize_strength: p.quantize_strength,
+        }
     })
 }
 
@@ -375,10 +384,11 @@ pub fn seq_config() -> SeqConfig {
 /// yang benar-benar tersimpan.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn set_seq_config(config: SeqConfig) -> SeqConfig {
+pub fn set_seq_config(group: u8, config: SeqConfig) -> SeqConfig {
     use daw_core::seq::{MAX_BARS, SeqSettings};
+    let g = grup(group);
     let pola = crate::audio::baca_seq(|q| {
-        let p = &q.pattern;
+        let p = &q.patterns[g];
         let bars = config.bars.clamp(1, MAX_BARS);
         let strength = if config.quantize_strength.is_finite() {
             config.quantize_strength.clamp(0.0, 1.0)
@@ -389,11 +399,16 @@ pub fn set_seq_config(config: SeqConfig) -> SeqConfig {
         (p.bars != bars
             || p.quantize_grid != grid
             || p.quantize_strength.to_bits() != strength.to_bits())
-        .then(|| daw_core::seq::Pattern {
-            bars,
-            quantize_grid: grid,
-            quantize_strength: strength,
-            notes: p.notes.clone(),
+        .then(|| {
+            (
+                g,
+                daw_core::seq::Pattern {
+                    bars,
+                    quantize_grid: grid,
+                    quantize_strength: strength,
+                    notes: p.notes.clone(),
+                },
+            )
         })
     });
     let pengaturan = SeqSettings {
@@ -403,15 +418,15 @@ pub fn set_seq_config(config: SeqConfig) -> SeqConfig {
         count_in_bars: config.count_in_bars,
     };
     crate::audio::atur_seq(pola, Some(pengaturan));
-    seq_config()
+    seq_config(group)
 }
 
-/// Semua not pola (tick mentah).
+/// Semua not pola grup `group` (tick mentah, pad lokal 0..16).
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn pattern_notes() -> Vec<NoteData> {
+pub fn pattern_notes(group: u8) -> Vec<NoteData> {
     crate::audio::baca_seq(|q| {
-        q.pattern
+        q.patterns[grup(group)]
             .notes
             .iter()
             .map(|n| NoteData {
@@ -429,9 +444,11 @@ pub fn pattern_notes() -> Vec<NoteData> {
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
 #[allow(clippy::needless_pass_by_value)] // flutter_rust_bridge memberi Vec milik sendiri
-pub fn set_pattern_notes(notes: Vec<NoteData>) -> bool {
+pub fn set_pattern_notes(group: u8, notes: Vec<NoteData>) -> bool {
+    let g = grup(group);
     let pola = crate::audio::baca_seq(|q| {
-        let panjang = q.pattern.length_ticks();
+        let lama = &q.patterns[g];
+        let panjang = lama.length_ticks();
         daw_core::seq::Pattern {
             notes: notes
                 .iter()
@@ -447,10 +464,25 @@ pub fn set_pattern_notes(notes: Vec<NoteData>) -> bool {
                     length: n.length.max(1),
                 })
                 .collect(),
-            ..q.pattern.clone()
+            ..lama.clone()
         }
     });
-    crate::audio::atur_seq(Some(pola), None)
+    crate::audio::atur_seq(Some((g, pola)), None)
+}
+
+/// Grup yang di-mute (A–D).
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn group_mutes() -> Vec<bool> {
+    crate::audio::baca_seq(|q| q.mutes.to_vec())
+}
+
+/// Mute grup: polanya diam, pad-nya tetap bisa dimainkan langsung.
+#[flutter_rust_bridge::frb(sync)]
+#[must_use]
+pub fn set_group_mute(group: u8, mute: bool) -> bool {
+    usize::from(group) < daw_core::pad::GROUP_COUNT
+        && crate::audio::atur_mute(usize::from(group), mute)
 }
 
 /// Mulai bermain dari awal pola. `record`: rekam ketukan (didahului
@@ -475,17 +507,19 @@ pub fn transport_record(enabled: bool) -> bool {
     crate::audio::atur_rekam(enabled)
 }
 
-/// Posisi transport. Dipanggil ±30 kali per detik oleh layar; sekaligus
-/// memasukkan ketukan yang direkam ke pola.
+/// Posisi transport, dihitung terhadap panjang pola grup `group`. Dipanggil
+/// ±30 kali per detik oleh layar; sekaligus memasukkan ketukan yang direkam
+/// ke pola.
 #[flutter_rust_bridge::frb(sync)]
 #[must_use]
-pub fn transport_state() -> TransportState {
+pub fn transport_state(group: u8) -> TransportState {
     use daw_core::seq::{PPQN, STEP_TICKS, TICKS_PER_BAR};
     let (playing, recording, tick) = crate::audio::status_transport();
     let (panjang, note_count) = crate::audio::baca_seq(|q| {
+        let p = &q.patterns[grup(group)];
         (
-            i64::from(q.pattern.length_ticks()),
-            u32::try_from(q.pattern.notes.len()).unwrap_or(u32::MAX),
+            i64::from(p.length_ticks()),
+            u32::try_from(p.notes.len()).unwrap_or(u32::MAX),
         )
     });
     let bar_t = i64::from(TICKS_PER_BAR);

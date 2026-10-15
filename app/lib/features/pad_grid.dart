@@ -14,10 +14,14 @@ class KisiPad extends StatelessWidget {
     required this.onKetuk,
     required this.onLepas,
     this.onTahan,
+    this.grup = 0,
     super.key,
   });
 
   final bool aktif;
+
+  /// Grup yang ditampilkan (0..3): menentukan warna LED.
+  final int grup;
 
   /// Pad ditekan lama: buka halaman Sound (rencana §7).
   final ValueChanged<int>? onTahan;
@@ -76,6 +80,7 @@ class KisiPad extends StatelessWidget {
     onKetuk: (v) => onKetuk(i, v),
     onLepas: () => onLepas(i),
     onTahan: onTahan == null ? null : () => onTahan!(i),
+    grup: grup,
   );
 }
 
@@ -93,6 +98,7 @@ class Pad extends StatefulWidget {
     required this.onKetuk,
     required this.onLepas,
     this.onTahan,
+    this.grup = 0,
     super.key,
   });
 
@@ -107,6 +113,9 @@ class Pad extends StatefulWidget {
   final ValueChanged<double> onKetuk;
   final VoidCallback onLepas;
   final VoidCallback? onTahan;
+
+  /// Grup pad (0..3): LED menyala dengan warna grupnya.
+  final int grup;
 
   @override
   State<Pad> createState() => _PadState();
@@ -190,7 +199,8 @@ class _PadState extends State<Pad> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: widget.ledMenyala
-                          ? t.groupA
+                          ? [t.groupA, t.groupB, t.groupC, t.groupD][widget.grup
+                                .clamp(0, 3)]
                           : t.keyLight.withValues(alpha: 0.15),
                     ),
                   ),

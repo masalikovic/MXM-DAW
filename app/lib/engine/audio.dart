@@ -30,9 +30,9 @@ abstract interface class MesinAudio {
   bool lepas(int pad);
 
   /// Bit ke-`n` menyala bila pad `n` sedang berbunyi (untuk LED).
-  int padBerbunyi();
+  int padBerbunyi(int grup);
 
-  /// Nama suara ke-16 pad.
+  /// Nama suara ke-64 pad (nomor global = grup × 16 + pad).
   List<String> namaPad();
 
   /// Angka kesehatan mesin saat ini.
@@ -64,19 +64,25 @@ abstract interface class MesinAudio {
   bool aturRekam({required bool nyala});
 
   /// Posisi transport; sekaligus memasukkan ketukan yang direkam ke pola.
-  rust.TransportState statusTransport();
+  rust.TransportState statusTransport(int grup);
 
   /// Tempo, swing, metronom, count-in, panjang pola, kuantisasi.
-  rust.SeqConfig pengaturanSeq();
+  rust.SeqConfig pengaturanSeq(int grup);
 
   /// Simpan pengaturan; mengembalikan nilai yang benar-benar tersimpan.
-  rust.SeqConfig aturPengaturanSeq(rust.SeqConfig nilai);
+  rust.SeqConfig aturPengaturanSeq(int grup, rust.SeqConfig nilai);
 
   /// Not pola (tick mentah).
-  List<rust.NoteData> notPola();
+  List<rust.NoteData> notPola(int grup);
 
   /// Ganti semua not pola.
-  bool aturNotPola(List<rust.NoteData> not);
+  bool aturNotPola(int grup, List<rust.NoteData> not);
+
+  /// Grup A–D yang di-mute.
+  List<bool> muteGrup();
+
+  /// Mute atau buka grup: polanya diam, pad-nya tetap bisa dimainkan.
+  bool aturMute(int grup, {required bool mute});
 }
 
 /// Mesin sungguhan: Rust lewat flutter_rust_bridge, lalu Oboe (ADR-0003).
@@ -97,7 +103,7 @@ class MesinAudioRust implements MesinAudio {
   bool lepas(int pad) => rust.padRelease(pad: pad);
 
   @override
-  int padBerbunyi() => rust.padsSounding();
+  int padBerbunyi(int grup) => rust.padsSounding(group: grup);
 
   @override
   List<String> namaPad() => rust.padNames();
@@ -136,20 +142,29 @@ class MesinAudioRust implements MesinAudio {
   bool aturRekam({required bool nyala}) => rust.transportRecord(enabled: nyala);
 
   @override
-  rust.TransportState statusTransport() => rust.transportState();
+  rust.TransportState statusTransport(int grup) =>
+      rust.transportState(group: grup);
 
   @override
-  rust.SeqConfig pengaturanSeq() => rust.seqConfig();
+  rust.SeqConfig pengaturanSeq(int grup) => rust.seqConfig(group: grup);
 
   @override
-  rust.SeqConfig aturPengaturanSeq(rust.SeqConfig nilai) =>
-      rust.setSeqConfig(config: nilai);
+  rust.SeqConfig aturPengaturanSeq(int grup, rust.SeqConfig nilai) =>
+      rust.setSeqConfig(group: grup, config: nilai);
 
   @override
-  List<rust.NoteData> notPola() => rust.patternNotes();
+  List<rust.NoteData> notPola(int grup) => rust.patternNotes(group: grup);
 
   @override
-  bool aturNotPola(List<rust.NoteData> not) => rust.setPatternNotes(notes: not);
+  bool aturNotPola(int grup, List<rust.NoteData> not) =>
+      rust.setPatternNotes(group: grup, notes: not);
+
+  @override
+  List<bool> muteGrup() => rust.groupMutes();
+
+  @override
+  bool aturMute(int grup, {required bool mute}) =>
+      rust.setGroupMute(group: grup, mute: mute);
 }
 
 /// Salinan [rust.SeqConfig] dengan sebagian nilai diganti.

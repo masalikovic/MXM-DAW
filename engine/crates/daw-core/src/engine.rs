@@ -3,7 +3,8 @@
 //!
 //! Pembagian peran:
 //! - [`EventSender`] dipegang thread UI (lewat FFI). Ia memegang **model**:
-//!   parameter dan sampel 16 pad, serta pola dan pengaturan sequencer. UI
+//!   parameter dan sampel 64 pad (grup A–D), serta pola dan pengaturan
+//!   sequencer. UI
 //!   membacanya tanpa bertanya ke thread audio (ADR-0002).
 //! - [`Engine`] dipegang thread audio. [`Engine::render`] tidak mengalokasi,
 //!   tidak mengunci, tidak melakukan I/O, dan **tidak membebaskan** memori
@@ -14,10 +15,10 @@
 //! ketukan yang direkam beserta posisinya).
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
 
 use crate::bank::PadBank;
-use crate::pad::{PAD_COUNT, PadParams};
+use crate::pad::{GROUP_COUNT, PAD_COUNT, PadParams, TOTAL_PADS};
 use crate::sampel::Sampel;
 use crate::seq::{
     Action, CompiledPattern, Note, PPQN, Pattern, STEP_TICKS, SeqSettings, Sequence, TICKS_PER_BAR,
@@ -86,8 +87,20 @@ pub enum Event {
         /// Sampel baru.
         sample: Arc<Sampel>,
     },
-    /// Pola diganti. Pola lama dikembalikan ke UI untuk dibebaskan.
-    SetPattern(Arc<CompiledPattern>),
+    /// Pola satu grup diganti. Pola lama dikembalikan ke UI untuk dibebaskan.
+    SetPattern {
+        /// Grup 0..4.
+        group: u8,
+        /// Pola terkompilasi (nomor pad global).
+        pattern: Arc<CompiledPattern>,
+    },
+    /// Mute grup: polanya tidak dibunyikan (ketukan langsung tetap berbunyi).
+    SetMute {
+        /// Grup 0..4.
+        group: u8,
+        /// Di-mute.
+        mute: bool,
+    },
     /// Transport.
     Transport(TransportCommand),
     /// Tempo (BPM, sudah disanitasi).
@@ -132,7 +145,7 @@ pub struct EngineStats {
     voices_active: AtomicU32,
     hits_played: AtomicU32,
     hits_dropped: AtomicU32,
-    pads_sounding: AtomicU32,
+    pads_sounding: AtomicU64,
     posisi_tick: AtomicI64,
     transport: AtomicU32,
 }
@@ -159,9 +172,9 @@ impl EngineStats {
         self.hits_dropped.load(Ordering::Relaxed)
     }
 
-    /// Bit ke-`n` menyala bila pad `n` sedang berbunyi (untuk LED pad).
+    /// Bit ke-`n` menyala bila pad global `n` sedang berbunyi (untuk LED).
     #[must_use]
-    pub fn pads_sounding(&self) -> u32 {
+    pub fn pads_sounding(&self) -> u64 {
         self.pads_sounding.load(Ordering::Relaxed)
     }
 
@@ -193,7 +206,7 @@ pub struct EventSender {
     bank: PadBank,
     seq: Sequence,
     /// Not yang sedang direkam dan menunggu "lepas", per pad.
-    terbuka: [Option<usize>; PAD_COUNT],
+    terbuka: [Option<usize>; TOTAL_PADS],
 }
 
 impl EventSender {
@@ -207,7 +220,7 @@ impl EventSender {
         let Ok(pad) = u8::try_from(pad) else {
             return false;
         };
-        if usize::from(pad) >= PAD_COUNT {
+        if usize::from(pad) >= TOTAL_PADS {
             return false;
         }
         let velocity = if velocity.is_nan() {
@@ -225,7 +238,7 @@ impl EventSender {
     /// Pad dilepas.
     pub fn release(&mut self, pad: usize) -> bool {
         match u8::try_from(pad) {
-            Ok(p) if pad < PAD_COUNT => self.kirim(Event::Release { pad: p }),
+            Ok(p) if pad < TOTAL_PADS => self.kirim(Event::Release { pad: p }),
             _ => false,
         }
     }
@@ -233,7 +246,7 @@ impl EventSender {
     /// Ganti parameter pad. Nilai disanitasi dulu; model hanya berubah bila
     /// event berhasil masuk antrean.
     pub fn set_pad(&mut self, pad: usize, params: &PadParams) -> bool {
-        let Some(p) = u8::try_from(pad).ok().filter(|_| pad < PAD_COUNT) else {
+        let Some(p) = u8::try_from(pad).ok().filter(|_| pad < TOTAL_PADS) else {
             return false;
         };
         let params = params.sanitized();
@@ -247,7 +260,7 @@ impl EventSender {
     /// Ganti sampel pad (mis. hasil impor). `start` pad menjadi 0 dan `end`
     /// panjang sampel.
     pub fn set_sample(&mut self, pad: usize, name: &str, sample: Sampel) -> bool {
-        let Some(p) = u8::try_from(pad).ok().filter(|_| pad < PAD_COUNT) else {
+        let Some(p) = u8::try_from(pad).ok().filter(|_| pad < TOTAL_PADS) else {
             return false;
         };
         let sample = Arc::new(sample);
@@ -291,11 +304,29 @@ impl EventSender {
         &self.seq
     }
 
-    /// Ganti pola (mis. dari grid langkah). Dikompilasi di sini, lalu dikirim.
-    pub fn set_pattern(&mut self, pattern: Pattern) -> bool {
-        self.seq.pattern = pattern;
-        self.terbuka = [None; PAD_COUNT];
-        self.kirim_pola()
+    /// Ganti pola satu grup (mis. dari grid langkah). Dikompilasi di sini,
+    /// lalu dikirim. `false` bila grup tidak ada.
+    pub fn set_pattern(&mut self, group: usize, pattern: Pattern) -> bool {
+        if group >= GROUP_COUNT {
+            return false;
+        }
+        self.seq.patterns[group] = pattern;
+        for pad in group * PAD_COUNT..(group + 1) * PAD_COUNT {
+            self.terbuka[pad] = None;
+        }
+        self.kirim_pola(group)
+    }
+
+    /// Mute atau buka grup.
+    pub fn set_mute(&mut self, group: usize, mute: bool) -> bool {
+        let Some(g) = u8::try_from(group).ok().filter(|_| group < GROUP_COUNT) else {
+            return false;
+        };
+        let ok = self.kirim(Event::SetMute { group: g, mute });
+        if ok {
+            self.seq.mutes[group] = mute;
+        }
+        ok
     }
 
     /// Ganti tempo, swing, metronom, atau count-in.
@@ -311,7 +342,9 @@ impl EventSender {
             ok &= self.kirim(Event::SetMetronome(baru.metronome));
         }
         if baru.swing.to_bits() != lama.swing.to_bits() {
-            ok &= self.kirim_pola();
+            for g in 0..GROUP_COUNT {
+                ok &= self.kirim_pola(g);
+            }
         }
         ok
     }
@@ -326,7 +359,7 @@ impl EventSender {
         } else {
             TransportCommand::Stop
         };
-        self.terbuka = [None; PAD_COUNT];
+        self.terbuka = [None; TOTAL_PADS];
         self.kirim(Event::Transport(perintah))
     }
 
@@ -344,50 +377,62 @@ impl EventSender {
     pub fn poll_recording(&mut self, kompensasi_ms: f64) -> usize {
         let tick_per_ms = f64::from(self.seq.settings.bpm) * f64::from(PPQN) / 60_000.0;
         let geser = kompensasi_ms.max(0.0) * tick_per_ms;
-        let panjang_u = self.seq.pattern.length_ticks();
-        let panjang = f64::from(panjang_u);
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let ke_pola = |tick: f64| ((tick - geser).rem_euclid(panjang).round() as u32) % panjang_u;
         let mut baru = 0;
-        let mut berubah = false;
+        let mut berubah = [false; GROUP_COUNT];
         while let Ok(r) = self.rekaman.pop() {
+            let (tick, pad) = match r {
+                Recorded::On { tick, pad, .. } | Recorded::Off { tick, pad } => (tick, pad),
+            };
+            let global = usize::from(pad);
+            let grup = global / PAD_COUNT;
+            let pola = &mut self.seq.patterns[grup];
+            let panjang_u = pola.length_ticks();
+            let panjang = f64::from(panjang_u);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let ke_pola = ((tick - geser).rem_euclid(panjang).round() as u32) % panjang_u;
             match r {
-                Recorded::On {
-                    tick,
-                    pad,
-                    velocity,
-                } => {
-                    let notes = &mut self.seq.pattern.notes;
-                    notes.push(Note {
-                        tick: ke_pola(tick),
-                        pad,
+                Recorded::On { velocity, .. } => {
+                    #[allow(clippy::cast_possible_truncation)]
+                    pola.notes.push(Note {
+                        tick: ke_pola,
+                        pad: (global % PAD_COUNT) as u8,
                         velocity,
                         length: STEP_TICKS,
                     });
-                    self.terbuka[usize::from(pad)] = Some(notes.len() - 1);
+                    self.terbuka[global] = Some(pola.notes.len() - 1);
                     baru += 1;
-                    berubah = true;
+                    berubah[grup] = true;
                 }
-                Recorded::Off { tick, pad } => {
-                    if let Some(i) = self.terbuka[usize::from(pad)].take()
-                        && let Some(n) = self.seq.pattern.notes.get_mut(i)
+                Recorded::Off { .. } => {
+                    if let Some(i) = self.terbuka[global].take()
+                        && let Some(n) = pola.notes.get_mut(i)
                     {
-                        let akhir = ke_pola(tick);
-                        n.length = ((akhir + panjang_u - n.tick) % panjang_u).max(1);
-                        berubah = true;
+                        n.length = ((ke_pola + panjang_u - n.tick) % panjang_u).max(1);
+                        berubah[grup] = true;
                     }
                 }
             }
         }
-        if berubah {
-            self.kirim_pola();
+        for (g, ya) in berubah.into_iter().enumerate() {
+            if ya {
+                self.kirim_pola(g);
+            }
         }
         baru
     }
 
-    fn kirim_pola(&mut self) -> bool {
-        let pola = Arc::new(compile(&self.seq.pattern, self.seq.settings.swing));
-        self.kirim(Event::SetPattern(pola))
+    fn kirim_pola(&mut self, group: usize) -> bool {
+        let pola = Arc::new(compile(
+            &self.seq.patterns[group],
+            group,
+            self.seq.settings.swing,
+        ));
+        #[allow(clippy::cast_possible_truncation)]
+        let group = group as u8;
+        self.kirim(Event::SetPattern {
+            group,
+            pattern: pola,
+        })
     }
 
     /// Ambil model untuk disimpan saat mesin dibebaskan. Memori lama yang
@@ -434,9 +479,10 @@ pub struct Engine {
     sampah: rtrb::Producer<Sampah>,
     rekaman: rtrb::Producer<Recorded>,
     suara: Box<[Suara; MAX_VOICES]>,
-    pads: [PadParams; PAD_COUNT],
-    sampel: [Option<Arc<Sampel>>; PAD_COUNT],
-    pola: Arc<CompiledPattern>,
+    pads: [PadParams; TOTAL_PADS],
+    sampel: [Option<Arc<Sampel>>; TOTAL_PADS],
+    pola: [Arc<CompiledPattern>; GROUP_COUNT],
+    mute: [bool; GROUP_COUNT],
     transport: Transport,
     klik: Klik,
     jadwal: Box<[(u32, Jadwal); MAKS_JADWAL]>,
@@ -471,7 +517,7 @@ impl Engine {
         let pads = core::array::from_fn(|i| bank.params(i).copied().unwrap_or_default());
         let sampel = core::array::from_fn(|i| bank.sample(i).cloned());
         let settings = seq.settings.sanitized();
-        let pola = Arc::new(compile(&seq.pattern, settings.swing));
+        let pola = core::array::from_fn(|g| Arc::new(compile(&seq.patterns[g], g, settings.swing)));
         #[allow(clippy::cast_precision_loss)]
         let sr = sample_rate.max(1) as f32;
         let mut transport = Transport::new(sr, settings.bpm);
@@ -485,6 +531,7 @@ impl Engine {
                 pads,
                 sampel,
                 pola,
+                mute: seq.mutes,
                 transport,
                 klik: Klik::default(),
                 jadwal: Box::new([(0, Jadwal::Klik { awal_bar: false }); MAKS_JADWAL]),
@@ -498,11 +545,8 @@ impl Engine {
                 rekaman: rekam_baca,
                 stats,
                 bank,
-                seq: Sequence {
-                    pattern: seq.pattern,
-                    settings,
-                },
-                terbuka: [None; PAD_COUNT],
+                seq: Sequence { settings, ..seq },
+                terbuka: [None; TOTAL_PADS],
             },
         )
     }
@@ -599,11 +643,14 @@ impl Engine {
             }
         }
 
-        // Not pola: hanya setelah count-in (tick ≥ 0).
-        let pola = &self.pola;
-        let l = f64::from(pola.length_ticks.max(1));
+        // Not pola tiap grup yang tidak di-mute; hanya setelah count-in
+        // (tick ≥ 0). Setiap grup berputar dengan panjang polanya sendiri.
         let mulai = lo.max(0.0);
-        if hi > mulai && !pola.actions.is_empty() {
+        for (pola, &mute) in self.pola.iter().zip(&self.mute) {
+            let l = f64::from(pola.length_ticks.max(1));
+            if mute || hi <= mulai || pola.actions.is_empty() {
+                continue;
+            }
             let mut putaran = (mulai / l).floor();
             while putaran * l < hi {
                 let dasar = putaran * l;
@@ -672,7 +719,7 @@ impl Engine {
 
     fn tulis_statistik(&self) {
         let mut aktif = 0;
-        let mut bit = 0_u32;
+        let mut bit = 0_u64;
         for s in self.suara.iter() {
             if s.aktif() {
                 aktif += 1;
@@ -764,8 +811,8 @@ impl Engine {
                     self.buang(Sampah::Sampel(lama));
                 }
             }
-            Event::SetPattern(pola) => {
-                let lama = core::mem::replace(&mut self.pola, pola);
+            Event::SetPattern { group, pattern } => {
+                let lama = core::mem::replace(&mut self.pola[usize::from(group)], pattern);
                 self.buang(Sampah::Pola(lama));
             }
             Event::Transport(TransportCommand::Play {
@@ -781,7 +828,7 @@ impl Engine {
             }
             Event::Transport(TransportCommand::Stop) => {
                 self.transport.berhenti();
-                for pad in 0..PAD_COUNT {
+                for pad in 0..TOTAL_PADS {
                     self.lepas(pad);
                 }
             }
@@ -790,6 +837,7 @@ impl Engine {
             }
             Event::SetTempo(bpm) => self.transport.atur_tempo(bpm),
             Event::SetMetronome(nyala) => self.transport.metronom = nyala,
+            Event::SetMute { group, mute } => self.mute[usize::from(group)] = mute,
         }
     }
 

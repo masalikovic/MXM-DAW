@@ -133,16 +133,16 @@ pub(crate) fn baca_seq<R>(f: impl FnOnce(&Sequence) -> R) -> R {
     f(seq.get_or_insert_with(Sequence::default))
 }
 
-/// Ganti pola dan/atau pengaturan sequencer.
-pub(crate) fn atur_seq(pola: Option<Pattern>, pengaturan: Option<SeqSettings>) -> bool {
+/// Ganti pola satu grup dan/atau pengaturan sequencer.
+pub(crate) fn atur_seq(pola: Option<(usize, Pattern)>, pengaturan: Option<SeqSettings>) -> bool {
     let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(ui) = ui.as_mut() {
         let mut ok = true;
         if let Some(p) = pengaturan {
             ok &= ui.pengirim.set_settings(&p);
         }
-        if let Some(p) = pola {
-            ok &= ui.pengirim.set_pattern(p);
+        if let Some((g, p)) = pola {
+            ok &= ui.pengirim.set_pattern(g, p);
         }
         return ok;
     }
@@ -151,8 +151,11 @@ pub(crate) fn atur_seq(pola: Option<Pattern>, pengaturan: Option<SeqSettings>) -
     if let Some(p) = pengaturan {
         seq.settings = p.sanitized();
     }
-    if let Some(p) = pola {
-        seq.pattern = p;
+    if let Some((g, p)) = pola {
+        let Some(tujuan) = seq.patterns.get_mut(g) else {
+            return false;
+        };
+        *tujuan = p;
     }
     true
 }
@@ -227,19 +230,37 @@ pub(crate) fn lepas(pad: usize) -> bool {
         .is_some_and(|ui| ui.pengirim.release(pad))
 }
 
-/// Bitmask pad yang sedang berbunyi (0 bila mesin belum berjalan).
-pub(crate) fn pad_berbunyi() -> u32 {
-    SISI_UI
+/// Bitmask 16 pad grup `grup` yang sedang berbunyi (0 bila mesin belum
+/// berjalan).
+pub(crate) fn pad_berbunyi(grup: usize) -> u32 {
+    let semua = SISI_UI
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .as_ref()
-        .map_or(0, |ui| ui.stats.pads_sounding())
+        .map_or(0, |ui| ui.stats.pads_sounding());
+    #[allow(clippy::cast_possible_truncation)]
+    let bit = (semua >> (grup.min(3) * daw_core::pad::PAD_COUNT)) as u32 & 0xFFFF;
+    bit
 }
 
-/// Nama suara ke-16 pad.
+/// Mute atau buka grup.
+pub(crate) fn atur_mute(grup: usize, mute: bool) -> bool {
+    let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_mut() {
+        return ui.pengirim.set_mute(grup, mute);
+    }
+    let mut seq = kunci_sekuens();
+    seq.get_or_insert_with(Sequence::default)
+        .mutes
+        .get_mut(grup)
+        .map(|m| *m = mute)
+        .is_some()
+}
+
+/// Nama suara ke-64 pad (nomor global).
 pub(crate) fn nama_pad() -> Vec<String> {
     baca(|b| {
-        (0..daw_core::pad::PAD_COUNT)
+        (0..daw_core::pad::TOTAL_PADS)
             .map(|i| b.name(i).unwrap_or_default().to_owned())
             .collect()
     })
@@ -336,6 +357,10 @@ mod tests {
         Sampel, atur_pad, atur_sampel, baca, ketuk, lepas, lepas_mesin, mxm_engine_render,
         nama_pad, pad_berbunyi, pasang_mesin, statistik,
     };
+    use crate::api::{
+        NoteData, SeqConfig, group_mutes, seq_config, set_group_mute, set_pattern_notes,
+        set_seq_config, transport_play, transport_state, transport_stop,
+    };
 
     /// 0,1 detik sinus 441 Hz, 44,1 kHz mono 16-bit.
     fn wav_pendek() -> Vec<u8> {
@@ -374,19 +399,20 @@ mod tests {
         assert!(render(64).iter().all(|&v| v == 0.0));
         assert!(!ketuk(0, 1.0));
         assert!(!lepas(0));
-        assert_eq!(pad_berbunyi(), 0);
+        assert_eq!(pad_berbunyi(0), 0);
         assert_eq!(nama_pad()[0], "KICK", "nama kit pabrik walau mesin mati");
 
         pasang_mesin();
         assert!(ketuk(0, 1.0));
         assert!(ketuk(13, 1.0));
-        assert!(!ketuk(16, 1.0), "pad 17 tidak ada");
+        assert!(ketuk(16, 1.0), "pad 1 grup B");
+        assert!(!ketuk(64, 1.0), "pad 65 tidak ada");
         let x = render(2_400);
         assert!(x.iter().any(|v| v.abs() > 0.3), "kick tidak berbunyi");
-        assert_eq!(statistik().1, 2);
-        assert_eq!(pad_berbunyi(), (1 << 0) | (1 << 13));
+        assert_eq!(statistik().1, 3);
+        assert_eq!(pad_berbunyi(0), (1 << 0) | (1 << 13));
         assert!(lepas(13));
-        assert_eq!(nama_pad().len(), 16);
+        assert_eq!(nama_pad().len(), 64);
 
         // Suntingan saat berjalan bertahan setelah mesin dilepas dan dipasang lagi.
         let mut p = baca(|b| *b.params(3).unwrap());
@@ -410,12 +436,58 @@ mod tests {
         assert_eq!((p.start, p.end), (0, 4_410));
         assert_eq!(nama_pad()[7], "VOKAL-SA");
         assert!(crate::api::pad_import_wav(7, "x.wav".to_owned(), vec![1, 2, 3]).is_err());
-        assert!(crate::api::pad_import_wav(16, "x.wav".to_owned(), wav_pendek()).is_err());
+        assert!(crate::api::pad_import_wav(64, "x.wav".to_owned(), wav_pendek()).is_err());
         assert!(ketuk(7, 1.0));
         assert!(
             render(512).iter().any(|v| v.abs() > 0.1),
             "sampel impor berbunyi"
         );
+
+        // Sequencer lewat API Dart: pengaturan dan not grup C, main, rekam.
+        let c = set_seq_config(
+            2,
+            SeqConfig {
+                bpm: 120.0,
+                swing: 0.5,
+                metronome: false,
+                count_in_bars: 0,
+                bars: 2,
+                quantize_grid: 240,
+                quantize_strength: 0.0,
+            },
+        );
+        assert_eq!(c.bars, 2);
+        assert_eq!(seq_config(0).bars, 1, "grup A tidak ikut berubah");
+        let not = |tick| NoteData {
+            tick,
+            pad: 0,
+            velocity: 1.0,
+            length: 240,
+        };
+        assert!(set_pattern_notes(2, vec![not(0), not(99_999)]));
+        assert_eq!(transport_state(2).note_count, 1, "not di luar pola dibuang");
+        assert!(!transport_state(2).playing);
+        assert!(transport_play(true));
+        render(24_000); // 120 BPM: 24 000 frame = 1 ketukan
+        let st = transport_state(2);
+        assert!(st.playing && st.recording);
+        assert_eq!((st.bar, st.beat, st.step), (1, 2, 4));
+        assert!(ketuk(2 * 16 + 5, 0.8)); // grup C, direkam di tick 960
+        render(256);
+        assert_eq!(transport_state(2).note_count, 2);
+        assert_eq!(transport_state(0).note_count, 0);
+        assert!(set_group_mute(2, true));
+        assert_eq!(group_mutes(), [false, false, true, false]);
+        assert!(!set_group_mute(4, true));
+        assert!(transport_stop());
+        render(256);
+        assert!(!transport_state(2).playing);
+
+        // Model sequencer bertahan setelah mesin dilepas.
         lepas_mesin();
+        assert_eq!(transport_state(2).note_count, 2);
+        assert_eq!(seq_config(2).bars, 2);
+        assert_eq!(group_mutes(), [false, false, true, false]);
+        assert!(!transport_play(false), "tanpa mesin tidak bisa main");
     }
 }

@@ -40,7 +40,7 @@ fn render_tanpa_alokasi() {
             .collect(),
         ..Pattern::default()
     };
-    kirim.set_pattern(pola(64));
+    kirim.set_pattern(0, pola(64));
     kirim.transport(true, true);
     for i in 0..600_usize {
         // Semua jenis event, termasuk ganti sampel (sampel lama harus
@@ -61,7 +61,7 @@ fn render_tanpa_alokasi() {
         }
         if i % 113 == 0 {
             // Pola diganti saat bermain: pola lama harus kembali ke sini.
-            kirim.set_pattern(pola(16 + (i as u32 % 48)));
+            kirim.set_pattern(0, pola(16 + (i as u32 % 48)));
             kirim.set_settings(&SeqSettings {
                 bpm: 90.0 + (i % 50) as f32,
                 swing: 0.6,

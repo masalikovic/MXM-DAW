@@ -12,7 +12,7 @@
     clippy::cast_sign_loss
 )]
 
-use crate::pad::PAD_COUNT;
+use crate::pad::{GROUP_COUNT, PAD_COUNT};
 
 /// Tick per ketukan (not 1/4).
 pub const PPQN: u32 = 960;
@@ -118,11 +118,14 @@ impl SeqSettings {
     }
 }
 
-/// Model sequencer yang disimpan bersama proyek: pola dan pengaturannya.
+/// Model sequencer yang disimpan bersama proyek: pola tiap grup dan
+/// pengaturannya.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sequence {
-    /// Pola grup A (M4: satu pola per grup, 99 pola).
-    pub pattern: Pattern,
+    /// Satu pola per grup A–D; not memakai nomor pad lokal 0..16.
+    pub patterns: [Pattern; GROUP_COUNT],
+    /// Grup yang di-mute: polanya tidak dibunyikan.
+    pub mutes: [bool; GROUP_COUNT],
     /// Tempo, swing, metronom, count-in.
     pub settings: SeqSettings,
 }
@@ -201,10 +204,12 @@ pub fn swing(tick: f64, swing: f32) -> f64 {
     tick + (swing - 0.5) * 2.0 * langkah
 }
 
-/// Kompilasi pola: kuantisasi, swing, lalu urutkan. Not untuk pad yang tidak
-/// ada dibuang.
+/// Kompilasi pola grup `group`: kuantisasi, swing, lalu urutkan. Nomor pad di
+/// hasilnya global (grup × 16 + pad). Not untuk pad yang tidak ada dibuang.
 #[must_use]
-pub fn compile(pattern: &Pattern, swing_amount: f32) -> CompiledPattern {
+pub fn compile(pattern: &Pattern, group: usize, swing_amount: f32) -> CompiledPattern {
+    #[allow(clippy::cast_possible_truncation)]
+    let dasar_pad = (group.min(GROUP_COUNT - 1) * PAD_COUNT) as u8;
     let panjang = pattern.length_ticks();
     let l = f64::from(panjang);
     let bungkus = |t: f64| t.rem_euclid(l);
@@ -223,13 +228,15 @@ pub fn compile(pattern: &Pattern, swing_amount: f32) -> CompiledPattern {
         aksi.push(Scheduled {
             tick: awal,
             action: Action::On {
-                pad: n.pad,
+                pad: dasar_pad + n.pad,
                 velocity: n.velocity.clamp(0.0, 1.0),
             },
         });
         aksi.push(Scheduled {
             tick: akhir,
-            action: Action::Off { pad: n.pad },
+            action: Action::Off {
+                pad: dasar_pad + n.pad,
+            },
         });
     }
     aksi.sort_by(|a, b| {
@@ -293,7 +300,7 @@ mod tests {
             ],
             ..Pattern::default()
         };
-        let k = compile(&pola, 0.5);
+        let k = compile(&pola, 0, 0.5);
         assert_eq!(k.length_ticks, TICKS_PER_BAR);
         assert_eq!(k.actions.len(), 6);
         assert!(k.actions.windows(2).all(|w| w[0].tick <= w[1].tick));
@@ -314,7 +321,7 @@ mod tests {
             quantize_grid: STEP_TICKS,
             quantize_strength: 1.0,
         };
-        let k = compile(&pola, 0.6);
+        let k = compile(&pola, 0, 0.6);
         // 250 → 240 (langkah 2) → +48 karena swing 60 %.
         assert!(
             (k.actions[0].tick - 288.0).abs() < 1e-9,
@@ -340,6 +347,21 @@ mod tests {
         }
         .sanitized();
         assert!((s.bpm - 97.3).abs() < 1e-4, "satu desimal: {}", s.bpm);
+    }
+
+    #[test]
+    fn nomor_pad_global_per_grup() {
+        let pola = Pattern {
+            notes: vec![not(0, 3)],
+            ..Pattern::default()
+        };
+        assert_eq!(
+            compile(&pola, 2, 0.5).actions[0].action,
+            Action::On {
+                pad: 35,
+                velocity: 1.0
+            }
+        );
     }
 
     #[test]

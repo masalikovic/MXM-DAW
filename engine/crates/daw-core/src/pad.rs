@@ -3,6 +3,11 @@
 
 /// Jumlah pad per grup.
 pub const PAD_COUNT: usize = 16;
+/// Jumlah grup (A–D, rencana §4.1).
+pub const GROUP_COUNT: usize = 4;
+/// Jumlah pad seluruh proyek. Nomor pad **global** = grup × 16 + pad, dipakai
+/// mesin, FFI, dan Dart.
+pub const TOTAL_PADS: usize = GROUP_COUNT * PAD_COUNT;
 /// Jumlah choke group (1..=8; 0 berarti tanpa choke).
 pub const CHOKE_GROUPS: u8 = 8;
 

@@ -76,9 +76,10 @@ fn kick_tanpa_klik_di_awal() {
 #[test]
 fn pad_di_luar_jangkauan_ditolak() {
     let (_m, mut k) = mesin();
-    assert!(!k.hit(16, 1.0));
+    assert!(k.hit(16, 1.0), "pad 1 grup B");
+    assert!(!k.hit(64, 1.0));
     assert!(!k.release(99));
-    assert!(!k.set_pad(16, &PadParams::default()));
+    assert!(!k.set_pad(64, &PadParams::default()));
 }
 
 #[test]
@@ -288,6 +289,11 @@ fn led_menunjukkan_pad_yang_berbunyi() {
 #[test]
 fn ganti_sampel_mengembalikan_yang_lama_ke_ui() {
     let (mut m, mut k) = mesin();
+    // Sampel kit dipakai bersama keempat grup, jadi yang diuji sampel impor
+    // yang hanya dimiliki pad 0.
+    assert!(k.set_sample(0, "LAMA", sinus(110.0)));
+    render(&mut m, 0.01, 2);
+    k.empty_trash();
     let lama = std::sync::Arc::downgrade(k.sample(0).unwrap());
     assert!(k.set_sample(0, "SINUS", sinus(220.0)));
     assert_eq!(k.name(0), Some("SINUS"));

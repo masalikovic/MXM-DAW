@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1164665268;
+  int get rustContentHash => -1796306547;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -87,6 +87,8 @@ abstract class RustLibApi extends BaseApi {
 
   String crateApiEngineVersion();
 
+  List<bool> crateApiGroupMutes();
+
   bool crateApiPadHit({required int pad, required double velocity});
 
   Future<PadSettings> crateApiPadImportWav({
@@ -105,26 +107,34 @@ abstract class RustLibApi extends BaseApi {
 
   PadSettings? crateApiPadSettings({required int pad});
 
-  int crateApiPadsSounding();
+  int crateApiPadsSounding({required int group});
 
-  List<NoteData> crateApiPatternNotes();
+  List<NoteData> crateApiPatternNotes({required int group});
 
-  SeqConfig crateApiSeqConfig();
+  SeqConfig crateApiSeqConfig({required int group});
+
+  bool crateApiSetGroupMute({required int group, required bool mute});
 
   PadSettings? crateApiSetPadSettings({
     required int pad,
     required PadSettings settings,
   });
 
-  bool crateApiSetPatternNotes({required List<NoteData> notes});
+  bool crateApiSetPatternNotes({
+    required int group,
+    required List<NoteData> notes,
+  });
 
-  SeqConfig crateApiSetSeqConfig({required SeqConfig config});
+  SeqConfig crateApiSetSeqConfig({
+    required int group,
+    required SeqConfig config,
+  });
 
   bool crateApiTransportPlay({required bool record});
 
   bool crateApiTransportRecord({required bool enabled});
 
-  TransportState crateApiTransportState();
+  TransportState crateApiTransportState({required int group});
 
   bool crateApiTransportStop();
 }
@@ -236,6 +246,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "engine_version", argNames: []);
 
   @override
+  List<bool> crateApiGroupMutes() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiGroupMutesConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiGroupMutesConstMeta =>
+      const TaskConstMeta(debugName: "group_mutes", argNames: []);
+
+  @override
   bool crateApiPadHit({required int pad, required double velocity}) {
     return handler.executeSync(
       SyncTask(
@@ -243,7 +275,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_8(pad, serializer);
           sse_encode_f_32(velocity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -275,7 +307,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -301,7 +333,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -325,7 +357,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_8(pad, serializer);
           sse_encode_u_32(points, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_f_32_strict,
@@ -348,7 +380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_8(pad, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -371,7 +403,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_8(pad, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_record_u_32_u_32,
@@ -394,7 +426,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_8(pad, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_pad_settings,
@@ -411,70 +443,99 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "pad_settings", argNames: ["pad"]);
 
   @override
-  int crateApiPadsSounding() {
+  int crateApiPadsSounding({required int group}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+          sse_encode_u_8(group, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiPadsSoundingConstMeta,
-        argValues: [],
+        argValues: [group],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiPadsSoundingConstMeta =>
-      const TaskConstMeta(debugName: "pads_sounding", argNames: []);
+      const TaskConstMeta(debugName: "pads_sounding", argNames: ["group"]);
 
   @override
-  List<NoteData> crateApiPatternNotes() {
+  List<NoteData> crateApiPatternNotes({required int group}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+          sse_encode_u_8(group, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_note_data,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiPatternNotesConstMeta,
-        argValues: [],
+        argValues: [group],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiPatternNotesConstMeta =>
-      const TaskConstMeta(debugName: "pattern_notes", argNames: []);
+      const TaskConstMeta(debugName: "pattern_notes", argNames: ["group"]);
 
   @override
-  SeqConfig crateApiSeqConfig() {
+  SeqConfig crateApiSeqConfig({required int group}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
+          sse_encode_u_8(group, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_seq_config,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiSeqConfigConstMeta,
-        argValues: [],
+        argValues: [group],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiSeqConfigConstMeta =>
-      const TaskConstMeta(debugName: "seq_config", argNames: []);
+      const TaskConstMeta(debugName: "seq_config", argNames: ["group"]);
+
+  @override
+  bool crateApiSetGroupMute({required int group, required bool mute}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_8(group, serializer);
+          sse_encode_bool(mute, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSetGroupMuteConstMeta,
+        argValues: [group, mute],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSetGroupMuteConstMeta => const TaskConstMeta(
+    debugName: "set_group_mute",
+    argNames: ["group", "mute"],
+  );
 
   @override
   PadSettings? crateApiSetPadSettings({
@@ -487,7 +548,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_8(pad, serializer);
           sse_encode_box_autoadd_pad_settings(settings, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_pad_settings,
@@ -506,50 +567,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  bool crateApiSetPatternNotes({required List<NoteData> notes}) {
+  bool crateApiSetPatternNotes({
+    required int group,
+    required List<NoteData> notes,
+  }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_8(group, serializer);
           sse_encode_list_note_data(notes, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiSetPatternNotesConstMeta,
-        argValues: [notes],
+        argValues: [group, notes],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiSetPatternNotesConstMeta =>
-      const TaskConstMeta(debugName: "set_pattern_notes", argNames: ["notes"]);
+  TaskConstMeta get kCrateApiSetPatternNotesConstMeta => const TaskConstMeta(
+    debugName: "set_pattern_notes",
+    argNames: ["group", "notes"],
+  );
 
   @override
-  SeqConfig crateApiSetSeqConfig({required SeqConfig config}) {
+  SeqConfig crateApiSetSeqConfig({
+    required int group,
+    required SeqConfig config,
+  }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_8(group, serializer);
           sse_encode_box_autoadd_seq_config(config, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_seq_config,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiSetSeqConfigConstMeta,
-        argValues: [config],
+        argValues: [group, config],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiSetSeqConfigConstMeta =>
-      const TaskConstMeta(debugName: "set_seq_config", argNames: ["config"]);
+  TaskConstMeta get kCrateApiSetSeqConfigConstMeta => const TaskConstMeta(
+    debugName: "set_seq_config",
+    argNames: ["group", "config"],
+  );
 
   @override
   bool crateApiTransportPlay({required bool record}) {
@@ -558,7 +631,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_bool(record, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -581,7 +654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_bool(enabled, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -598,26 +671,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "transport_record", argNames: ["enabled"]);
 
   @override
-  TransportState crateApiTransportState() {
+  TransportState crateApiTransportState({required int group}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
+          sse_encode_u_8(group, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_transport_state,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiTransportStateConstMeta,
-        argValues: [],
+        argValues: [group],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiTransportStateConstMeta =>
-      const TaskConstMeta(debugName: "transport_state", argNames: []);
+      const TaskConstMeta(debugName: "transport_state", argNames: ["group"]);
 
   @override
   bool crateApiTransportStop() {
@@ -625,7 +699,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 23)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -723,6 +797,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<bool> dco_decode_list_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_bool).toList();
   }
 
   @protected
@@ -963,6 +1043,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<bool> sse_decode_list_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <bool>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_bool(deserializer));
     }
     return ans_;
   }
@@ -1224,6 +1316,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_bool(List<bool> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_bool(item, serializer);
     }
   }
 
