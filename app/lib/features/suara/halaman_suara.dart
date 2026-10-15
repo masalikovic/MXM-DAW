@@ -6,6 +6,7 @@ import '../../design_system/kenop.dart';
 import '../../design_system/tokens.dart';
 import '../../engine/audio.dart';
 import '../../engine/berkas.dart';
+import '../../engine/papan_klip.dart';
 import 'gelombang.dart';
 import 'pemetaan.dart';
 
@@ -21,6 +22,7 @@ class HalamanSuara extends StatefulWidget {
     required this.pad,
     required this.nama,
     this.pemilih = const PemilihBerkasAndroid(),
+    this.klip,
     super.key,
   });
 
@@ -28,6 +30,9 @@ class HalamanSuara extends StatefulWidget {
   final int pad;
   final String nama;
   final PemilihBerkas pemilih;
+
+  /// Papan klip bersama layar lain; `null` = papan klip sendiri.
+  final PapanKlip? klip;
 
   @override
   State<HalamanSuara> createState() => _HalamanSuaraState();
@@ -39,6 +44,7 @@ class _HalamanSuaraState extends State<HalamanSuara> {
   late Float32List _puncak;
   late String _nama;
   bool _mengimpor = false;
+  late final PapanKlip _klip = widget.klip ?? PapanKlip();
 
   @override
   void initState() {
@@ -73,6 +79,23 @@ class _HalamanSuaraState extends State<HalamanSuara> {
     }
   }
 
+  void _menu(String pilihan) {
+    final pesan = ScaffoldMessenger.of(context);
+    switch (pilihan) {
+      case 'salin':
+        _klip.pad = widget.pad;
+        pesan.showSnackBar(SnackBar(content: Text('Disalin: $_nama')));
+      case 'tempel':
+        final dari = _klip.pad;
+        if (dari == null || !widget.audio.salinPad(dari, widget.pad)) return;
+        setState(() {
+          _muatSampel();
+          _nama = widget.audio.namaPad()[widget.pad];
+        });
+        pesan.showSnackBar(SnackBar(content: Text('Ditempel: $_nama')));
+    }
+  }
+
   void _ubah(PadSettings baru) {
     final tersimpan = widget.audio.aturPengaturan(widget.pad, baru);
     if (tersimpan != null) setState(() => _p = tersimpan);
@@ -101,6 +124,19 @@ class _HalamanSuaraState extends State<HalamanSuara> {
             onPressed: _mengimpor ? null : _impor,
             icon: const Icon(Icons.file_open_outlined),
             label: const Text('IMPOR WAV'),
+          ),
+          PopupMenuButton<String>(
+            key: const ValueKey('menu-suara'),
+            tooltip: 'Salin/tempel',
+            onSelected: _menu,
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'salin', child: Text('SALIN SUARA')),
+              PopupMenuItem(
+                value: 'tempel',
+                enabled: _klip.pad != null && _klip.pad != widget.pad,
+                child: const Text('TEMPEL SUARA'),
+              ),
+            ],
           ),
         ],
       ),

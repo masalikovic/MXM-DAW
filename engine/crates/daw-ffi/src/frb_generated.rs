@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -471485278;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -899973793;
 
 // Section: executor
 
@@ -171,6 +171,37 @@ fn wire__crate__api__engine_version_impl(
         },
     )
 }
+fn wire__crate__api__group_copy_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "group_copy",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_from = <u8>::sse_decode(&mut deserializer);
+            let api_to = <u8>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::group_copy(api_from, api_to))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__group_mutes_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -195,6 +226,66 @@ fn wire__crate__api__group_mutes_impl(
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Ok::<_, ()>(crate::api::group_mutes())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__history_counts_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "history_counts",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::history_counts())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__pad_copy_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pad_copy",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_from = <u8>::sse_decode(&mut deserializer);
+            let api_to = <u8>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::pad_copy(api_from, api_to))?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -612,6 +703,35 @@ fn wire__crate__api__project_save_impl(
         },
     )
 }
+fn wire__crate__api__redo_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "redo",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::redo())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__seq_config_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -880,6 +1000,35 @@ fn wire__crate__api__transport_stop_impl(
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Ok::<_, ()>(crate::api::transport_stop())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__undo_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "undo",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::undo())?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -1211,9 +1360,9 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         2 => wire__crate__api__audio_start_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__audio_stop_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__pad_import_wav_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__project_load_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__project_save_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__pad_import_wav_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__project_load_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__project_save_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1228,26 +1377,31 @@ fn pde_ffi_dispatcher_sync_impl(
     match func_id {
         1 => wire__crate__api__audio_health_impl(ptr, rust_vec_len, data_len),
         4 => wire__crate__api__engine_version_impl(ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__group_mutes_impl(ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__pad_hit_impl(ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__pad_names_impl(ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__pad_peaks_impl(ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__pad_release_impl(ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__pad_repeat_impl(ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__pad_sample_info_impl(ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__pad_settings_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__pads_sounding_impl(ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__pattern_notes_impl(ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__project_revision_impl(ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__seq_config_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__set_group_mute_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__set_pad_settings_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__set_pattern_notes_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__set_seq_config_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__transport_play_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__transport_record_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__transport_state_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__transport_stop_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__group_copy_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__group_mutes_impl(ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__history_counts_impl(ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__pad_copy_impl(ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__pad_hit_impl(ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__pad_names_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__pad_peaks_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__pad_release_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__pad_repeat_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__pad_sample_info_impl(ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__pad_settings_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__pads_sounding_impl(ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__pattern_notes_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__project_revision_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__redo_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__seq_config_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__set_group_mute_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__set_pad_settings_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__set_pattern_notes_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__set_seq_config_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__transport_play_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__transport_record_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__transport_state_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__transport_stop_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__undo_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

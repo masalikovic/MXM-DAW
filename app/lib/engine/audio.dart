@@ -88,6 +88,21 @@ abstract interface class MesinAudio {
 
   /// Mute atau buka grup: polanya diam, pad-nya tetap bisa dimainkan.
   bool aturMute(int grup, {required bool mute});
+
+  /// Batalkan langkah terakhir; `false` bila tidak ada.
+  bool urungkan();
+
+  /// Ulangi langkah yang dibatalkan; `false` bila tidak ada.
+  bool ulangi();
+
+  /// (jumlah undo, jumlah redo) yang tersedia.
+  (int, int) jumlahRiwayat();
+
+  /// Salin suara pad global [dari] ke pad [ke].
+  bool salinPad(int dari, int ke);
+
+  /// Salin grup [dari] ke grup [ke]: 16 suara beserta polanya.
+  bool salinGrup(int dari, int ke);
 }
 
 /// Mesin sungguhan: Rust lewat flutter_rust_bridge, lalu Oboe (ADR-0003).
@@ -175,6 +190,21 @@ class MesinAudioRust implements MesinAudio {
   @override
   bool aturMute(int grup, {required bool mute}) =>
       rust.setGroupMute(group: grup, mute: mute);
+
+  @override
+  bool urungkan() => rust.undo();
+
+  @override
+  bool ulangi() => rust.redo();
+
+  @override
+  (int, int) jumlahRiwayat() => rust.historyCounts();
+
+  @override
+  bool salinPad(int dari, int ke) => rust.padCopy(from: dari, to: ke);
+
+  @override
+  bool salinGrup(int dari, int ke) => rust.groupCopy(from: dari, to: ke);
 }
 
 /// Salinan [rust.SeqConfig] dengan sebagian nilai diganti.

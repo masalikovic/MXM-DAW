@@ -4,11 +4,17 @@ import 'package:mxmdaw/app/theme.dart';
 import 'package:mxmdaw/design_system/kenop.dart';
 import 'package:mxmdaw/design_system/tokens.dart';
 import 'package:mxmdaw/engine/audio.dart';
+import 'package:mxmdaw/engine/papan_klip.dart';
 import 'package:mxmdaw/features/pola/halaman_pola.dart';
 
 import '../../beranda_test.dart' show MesinPalsu;
 
-Future<MesinPalsu> buka(WidgetTester tester, {int bars = 1}) async {
+Future<MesinPalsu> buka(
+  WidgetTester tester, {
+  int bars = 1,
+  int grup = 0,
+  PapanKlip? klip,
+}) async {
   tester.view.physicalSize = const Size(1080, 2220);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -19,8 +25,10 @@ Future<MesinPalsu> buka(WidgetTester tester, {int bars = 1}) async {
       theme: mxmTheme(MxmTokens.light, Brightness.light),
       home: HalamanPola(
         audio: mesin,
-        nama: mesin.namaPad().take(16).toList(),
+        grup: grup,
+        nama: mesin.namaPad().sublist(grup * 16, grup * 16 + 16),
         pad: 1,
+        klip: klip,
       ),
     ),
   );
@@ -119,5 +127,62 @@ void main() {
     final mesin = await buka(tester);
     await tester.tap(find.byKey(const ValueKey('pola-main')));
     expect(mesin.perintah, ['main']);
+  });
+
+  Future<void> pilihMenu(WidgetTester tester, String teks) async {
+    await tester.tap(find.byKey(const ValueKey('menu-pola')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(teks));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('SALIN POLA menyimpan not dan panjang ke papan klip', (
+    tester,
+  ) async {
+    final klip = PapanKlip();
+    await buka(tester, bars: 2, klip: klip);
+    await tester.tap(find.byKey(const ValueKey('langkah-4')));
+    await tester.pump();
+    await pilihMenu(tester, 'SALIN POLA');
+
+    expect(klip.pola!.bars, 2);
+    expect(klip.pola!.not.single.tick, 960);
+    expect(find.text('Pola A disalin'), findsOneWidget);
+  });
+
+  testWidgets('TEMPEL POLA ke grup lain: panjang dulu, lalu not', (
+    tester,
+  ) async {
+    const n = NoteData(tick: 3000, pad: 4, velocity: 1, length: 240, pitch: 0);
+    final klip = PapanKlip()..pola = (not: [n], bars: 4);
+    final mesin = await buka(tester, grup: 2, klip: klip);
+    await pilihMenu(tester, 'TEMPEL POLA');
+
+    expect(mesin.seq.bars, 4);
+    expect(mesin.grupPola, 2);
+    expect(mesin.not, [n]);
+    expect(find.textContaining('C · 4 BAR'), findsOneWidget);
+  });
+
+  testWidgets('TEMPEL GRUP menyalin suara + pola dan memperbarui nama', (
+    tester,
+  ) async {
+    final klip = PapanKlip()..grup = 0;
+    final mesin = await buka(tester, grup: 1, klip: klip);
+    expect(find.textContaining('B2'), findsWidgets);
+    await pilihMenu(tester, 'TEMPEL GRUP');
+
+    expect(mesin.perintah, ['salin-grup 0→1']);
+    expect(find.textContaining('SUARA2'), findsWidgets);
+    expect(find.text('Grup A ditempel ke B'), findsOneWidget);
+  });
+
+  testWidgets('TEMPEL GRUP ke grup yang sama tidak bisa dipilih', (
+    tester,
+  ) async {
+    final klip = PapanKlip()..grup = 0;
+    final mesin = await buka(tester, klip: klip);
+    await pilihMenu(tester, 'TEMPEL GRUP');
+    expect(mesin.perintah, isEmpty);
   });
 }

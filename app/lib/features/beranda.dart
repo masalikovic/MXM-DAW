@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../design_system/tokens.dart';
 import '../engine/audio.dart';
 import '../engine/engine.dart';
+import '../engine/papan_klip.dart';
 import '../engine/proyek.dart';
 import '../engine/simpan_otomatis.dart';
 import 'grup.dart';
@@ -78,6 +79,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
 
   /// Note repeat (tick); 0 = mati.
   int _rate = 0;
+  final _klip = PapanKlip();
   final _tapTempo = TapTempo();
   final _jam = Stopwatch()..start();
 
@@ -247,12 +249,13 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                 audio: audio,
                 pad: pad,
                 nama: pad < _nama.length ? _nama[pad] : '',
+                klip: _klip,
               ),
             ),
           )
-          // Nama pad bisa berubah setelah impor.
+          // Nama pad bisa berubah setelah impor atau tempel.
           .then((_) {
-            if (mounted) setState(() => _nama = audio.namaPad());
+            if (mounted) _segarkanModel();
           }),
     );
   }
@@ -308,14 +311,44 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                 grup: _grup,
                 nama: _namaGrup,
                 pad: _padTerakhir,
+                klip: _klip,
               ),
             ),
           )
-          // Swing dan kuantisasi bisa berubah di halaman Pola.
+          // Swing, kuantisasi, dan nama (tempel grup) bisa berubah di sana.
           .then((_) {
-            if (mounted) setState(() => _seq = audio.pengaturanSeq(_grup));
+            if (mounted) _segarkanModel();
           }),
     );
+  }
+
+  /// Baca ulang semua yang ditampilkan dari model (setelah undo, tempel).
+  void _segarkanModel() {
+    final audio = widget.audio!;
+    setState(() {
+      _nama = audio.namaPad();
+      _seq = audio.pengaturanSeq(_grup);
+      _mute = audio.muteGrup();
+    });
+    _segarkanLed();
+  }
+
+  void _riwayat({required bool maju}) {
+    final audio = widget.audio!;
+    final berhasil = maju ? audio.ulangi() : audio.urungkan();
+    final (undo, redo) = audio.jumlahRiwayat();
+    if (berhasil) _segarkanModel();
+    final pesan = switch ((maju, berhasil)) {
+      (false, true) => 'Undo · sisa $undo',
+      (true, true) => 'Redo · sisa $redo',
+      (false, false) => 'Tidak ada yang bisa di-undo',
+      (true, false) => 'Tidak ada yang bisa di-redo',
+    };
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(pesan), duration: const Duration(seconds: 1)),
+      );
   }
 
   void _hapusPola() {
@@ -440,6 +473,8 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
                   onTap: _tap,
                   onHapus: _hapusPola,
                   onGrid: _bukaPola,
+                  onUndo: () => _riwayat(maju: false),
+                  onRedo: () => _riwayat(maju: true),
                 ),
             ],
           ),

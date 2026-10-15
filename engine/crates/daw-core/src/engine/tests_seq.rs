@@ -6,6 +6,8 @@
     clippy::cast_sign_loss
 )]
 
+use std::sync::Arc;
+
 use super::{Engine, EventSender};
 use crate::pad::PadParams;
 use crate::sampel::Sampel;
@@ -474,4 +476,57 @@ fn note_repeat_saat_merekam_masuk_ke_pola() {
         .collect();
     tick.sort_unstable();
     assert_eq!(tick, [0, 960, 1_920, 2_880]);
+}
+
+#[test]
+fn terapkan_model_lama_memulihkan_bunyi_dan_pola() {
+    let (mut m, mut k) = mesin_impuls(120.0);
+    let (bank0, seq0) = (k.bank().clone(), k.sequence().clone());
+    // Ubah: pola grup A, pitch pad 0, mute grup B, tempo.
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0)],
+            ..Pattern::default()
+        },
+    );
+    let mut p = *k.pad(0).unwrap();
+    p.level = 0.0;
+    k.set_pad(0, &p);
+    k.set_mute(1, true);
+    // Kembali ke model awal (seperti undo).
+    assert!(k.apply_model(bank0, seq0.clone()));
+    assert_eq!(k.sequence(), &seq0);
+    assert!((k.pad(0).unwrap().level - 1.0).abs() < f32::EPSILON);
+    k.transport(true, false);
+    render(&mut m, 9_600, 256);
+    assert_eq!(m.stats().hits_played(), 0, "pola kosong lagi");
+}
+
+#[test]
+fn salin_pad_dan_grup() {
+    let (mut m, mut k) = mesin_impuls(120.0);
+    assert!(k.copy_pad(0, 20));
+    assert_eq!(k.name(20), Some("IMPULS"));
+    assert!(
+        Arc::ptr_eq(k.sample(0).unwrap(), k.sample(20).unwrap()),
+        "sampel dibagi"
+    );
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0)],
+            ..Pattern::default()
+        },
+    );
+    assert!(k.copy_group(0, 3));
+    assert_eq!(k.sequence().patterns[3], k.sequence().patterns[0]);
+    assert_eq!(k.name(48), Some("IMPULS"));
+    // Grup D memainkan salinan polanya: dua not (A dan D) di awal.
+    k.transport(true, false);
+    render(&mut m, 256, 256);
+    assert_eq!(m.stats().hits_played(), 2);
+    assert!(!k.copy_group(0, 4));
 }

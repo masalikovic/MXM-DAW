@@ -530,6 +530,78 @@ impl EventSender {
         &self.stats
     }
 
+    /// Terapkan seluruh model (mis. hasil undo/redo). Hanya bagian yang
+    /// berbeda yang dikirim ke thread audio; sampel dibandingkan lewat
+    /// alamat `Arc`, jadi tidak ada salinan audio.
+    pub fn apply_model(&mut self, bank: PadBank, seq: Sequence) -> bool {
+        let mut ok = true;
+        for pad in 0..TOTAL_PADS {
+            #[allow(clippy::cast_possible_truncation)]
+            let p = pad as u8;
+            if let Some(baru) = bank.sample(pad)
+                && !self
+                    .bank
+                    .sample(pad)
+                    .is_some_and(|lama| Arc::ptr_eq(lama, baru))
+            {
+                ok &= self.kirim(Event::SetSample {
+                    pad: p,
+                    sample: Arc::clone(baru),
+                });
+            }
+            let params = bank.params(pad).copied().unwrap_or_default();
+            if self.bank.params(pad) != Some(&params) {
+                ok &= self.kirim(Event::SetPad { pad: p, params });
+            }
+        }
+        let lama = core::mem::replace(&mut self.seq, seq);
+        for g in 0..GROUP_COUNT {
+            #[allow(clippy::cast_possible_truncation)]
+            let grup = g as u8;
+            if lama.mutes[g] != self.seq.mutes[g] {
+                ok &= self.kirim(Event::SetMute {
+                    group: grup,
+                    mute: self.seq.mutes[g],
+                });
+            }
+            if lama.patterns[g] != self.seq.patterns[g]
+                || lama.settings.swing.to_bits() != self.seq.settings.swing.to_bits()
+            {
+                ok &= self.kirim_pola(g);
+            }
+        }
+        if lama.settings.bpm.to_bits() != self.seq.settings.bpm.to_bits() {
+            ok &= self.kirim(Event::SetTempo(self.seq.settings.bpm));
+        }
+        if lama.settings.metronome != self.seq.settings.metronome {
+            ok &= self.kirim(Event::SetMetronome(self.seq.settings.metronome));
+        }
+        self.bank = bank;
+        self.terbuka.clear();
+        self.perubahan += 1;
+        ok
+    }
+
+    /// Salin suara pad `dari` ke pad `ke` (nomor global).
+    pub fn copy_pad(&mut self, dari: usize, ke: usize) -> bool {
+        let mut bank = self.bank.clone();
+        bank.copy_pad(dari, ke) && self.apply_model(bank, self.seq.clone())
+    }
+
+    /// Salin grup `dari` ke grup `ke`: 16 suara beserta polanya.
+    pub fn copy_group(&mut self, dari: usize, ke: usize) -> bool {
+        if dari >= GROUP_COUNT || ke >= GROUP_COUNT {
+            return false;
+        }
+        let mut bank = self.bank.clone();
+        for i in 0..PAD_COUNT {
+            bank.copy_pad(dari * PAD_COUNT + i, ke * PAD_COUNT + i);
+        }
+        let mut seq = self.seq.clone();
+        seq.patterns[ke] = seq.patterns[dari].clone();
+        self.apply_model(bank, seq)
+    }
+
     /// Jumlah perubahan model sejak pengirim ini dibuat. Naik setiap kali
     /// pad, sampel, pola, mute, atau pengaturan berubah, termasuk rekaman.
     #[must_use]

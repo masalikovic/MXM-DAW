@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../design_system/kenop.dart';
 import '../../design_system/tokens.dart';
 import '../../engine/audio.dart';
+import '../../engine/papan_klip.dart';
 import '../suara/pemetaan.dart';
 import 'grid.dart';
 
@@ -16,6 +17,7 @@ class HalamanPola extends StatefulWidget {
     required this.nama,
     this.grup = 0,
     this.pad = 0,
+    this.klip,
     super.key,
   });
 
@@ -30,12 +32,17 @@ class HalamanPola extends StatefulWidget {
   /// Pad (lokal 0..15) yang dipilih saat halaman dibuka.
   final int pad;
 
+  /// Papan klip bersama layar lain; `null` = papan klip sendiri.
+  final PapanKlip? klip;
+
   @override
   State<HalamanPola> createState() => _HalamanPolaState();
 }
 
 class _HalamanPolaState extends State<HalamanPola> {
   late int _pad = widget.pad;
+  late List<String> _nama = widget.nama;
+  late final PapanKlip _klip = widget.klip ?? PapanKlip();
   int _halaman = 0;
   late SeqConfig _seq;
   late List<NoteData> _not;
@@ -88,6 +95,41 @@ class _HalamanPolaState extends State<HalamanPola> {
     }
   }
 
+  String get _hurufGrup => 'ABCD'[widget.grup.clamp(0, 3)];
+
+  void _menu(String pilihan) {
+    final audio = widget.audio;
+    final grup = widget.grup;
+    final String pesan;
+    switch (pilihan) {
+      case 'salin-pola':
+        _klip.pola = (not: List.of(_not), bars: _seq.bars);
+        pesan = 'Pola $_hurufGrup disalin';
+      case 'tempel-pola':
+        final pola = _klip.pola;
+        if (pola == null) return;
+        // Panjang dulu, supaya not di bar akhir tidak dibuang.
+        _aturSeq((s) => s.salin(bars: pola.bars));
+        _aturNot(pola.not);
+        pesan = 'Pola ditempel ke $_hurufGrup';
+      case 'salin-grup':
+        _klip.grup = grup;
+        pesan = 'Grup $_hurufGrup disalin';
+      case 'tempel-grup':
+        final dari = _klip.grup;
+        if (dari == null || !audio.salinGrup(dari, grup)) return;
+        setState(() {
+          _seq = audio.pengaturanSeq(grup);
+          _not = audio.notPola(grup);
+          _nama = audio.namaPad().sublist(grup * 16, grup * 16 + 16);
+        });
+        pesan = 'Grup ${'ABCD'[dari]} ditempel ke $_hurufGrup';
+      default:
+        return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan)));
+  }
+
   void _aturSeq(SeqConfig Function(SeqConfig) ubah) {
     setState(
       () => _seq = widget.audio.aturPengaturanSeq(widget.grup, ubah(_seq)),
@@ -107,9 +149,9 @@ class _HalamanPolaState extends State<HalamanPola> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '${'ABCD'[widget.grup.clamp(0, 3)]} · ${_seq.bars} BAR  ·  '
+          '$_hurufGrup · ${_seq.bars} BAR  ·  '
           'PAD ${_pad + 1} '
-          '${_pad < widget.nama.length ? widget.nama[_pad] : ''}',
+          '${_pad < _nama.length ? _nama[_pad] : ''}',
         ),
         actions: [
           IconButton(
@@ -119,6 +161,31 @@ class _HalamanPolaState extends State<HalamanPola> {
             onPressed: () => _status.playing
                 ? widget.audio.hentikan()
                 : widget.audio.mainkan(rekam: false),
+          ),
+          PopupMenuButton<String>(
+            key: const ValueKey('menu-pola'),
+            tooltip: 'Salin/tempel',
+            onSelected: _menu,
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'salin-pola',
+                child: Text('SALIN POLA'),
+              ),
+              PopupMenuItem(
+                value: 'tempel-pola',
+                enabled: _klip.pola != null,
+                child: const Text('TEMPEL POLA'),
+              ),
+              const PopupMenuItem(
+                value: 'salin-grup',
+                child: Text('SALIN GRUP (SUARA + POLA)'),
+              ),
+              PopupMenuItem(
+                value: 'tempel-grup',
+                enabled: _klip.grup != null && _klip.grup != widget.grup,
+                child: const Text('TEMPEL GRUP'),
+              ),
+            ],
           ),
         ],
       ),
@@ -131,12 +198,12 @@ class _HalamanPolaState extends State<HalamanPola> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  for (var i = 0; i < widget.nama.length; i++)
+                  for (var i = 0; i < _nama.length; i++)
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
                         key: ValueKey('pilih-pad-$i'),
-                        label: Text('${i + 1} ${widget.nama[i]}'),
+                        label: Text('${i + 1} ${_nama[i]}'),
                         selected: i == _pad,
                         onSelected: (_) => setState(() => _pad = i),
                       ),

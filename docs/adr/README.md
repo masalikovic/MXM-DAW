@@ -43,6 +43,7 @@ ADR 0001–0008 berasal dari tabel keputusan inti di
 | [0014](0014-sampler-dan-memori-sampel.md) | Sampler: model pad di Rust, sampel dibebaskan di thread UI | Diterima |
 | [0015](0015-sequencer.md) | Sequencer: pola mentah di UI, jadwal tepat-sampel di thread audio | Diterima |
 | [0016](0016-proyek-dan-simpan-otomatis.md) | Berkas proyek dan simpan otomatis | Diterima |
+| [0017](0017-undo-dan-salin.md) | Undo/redo dan salin/tempel | Diterima |
 
 ## Template
 

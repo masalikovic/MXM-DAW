@@ -177,6 +177,24 @@ Future<void> projectSave({required String dir}) =>
 PlatformInt64 projectRevision() =>
     RustLib.instance.api.crateApiProjectRevision();
 
+/// Batalkan langkah terakhir (rencana §4.3, 100 langkah). Satu gerakan
+/// (memutar kenop, satu sesi rekaman) = satu langkah. `false` bila tidak ada.
+bool undo() => RustLib.instance.api.crateApiUndo();
+
+/// Ulangi langkah yang dibatalkan. `false` bila tidak ada.
+bool redo() => RustLib.instance.api.crateApiRedo();
+
+/// (jumlah undo, jumlah redo) yang tersedia, untuk tombol di layar.
+(int, int) historyCounts() => RustLib.instance.api.crateApiHistoryCounts();
+
+/// Salin suara pad `from` ke pad `to` (nomor global): parameter, sampel, nama.
+bool padCopy({required int from, required int to}) =>
+    RustLib.instance.api.crateApiPadCopy(from: from, to: to);
+
+/// Salin grup `from` ke grup `to`: 16 suara beserta polanya.
+bool groupCopy({required int from, required int to}) =>
+    RustLib.instance.api.crateApiGroupCopy(from: from, to: to);
+
 /// Angka kesehatan mesin saat ini.
 AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
 

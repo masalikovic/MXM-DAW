@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:mxmdaw/engine/audio.dart';
 import 'package:mxmdaw/engine/berkas.dart';
+import 'package:mxmdaw/engine/papan_klip.dart';
 import 'package:mxmdaw/features/suara/halaman_suara.dart';
 
 import '../../beranda_test.dart' show MesinPalsu;
@@ -21,7 +22,11 @@ class PemilihPalsu implements PemilihBerkas {
   Future<BerkasAudio?> pilihAudio() async => hasil();
 }
 
-Future<MesinPalsu> buka(WidgetTester tester, {PemilihBerkas? pemilih}) async {
+Future<MesinPalsu> buka(
+  WidgetTester tester, {
+  PemilihBerkas? pemilih,
+  PapanKlip? klip,
+}) async {
   tester.view.physicalSize = const Size(1080, 2220);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -34,6 +39,7 @@ Future<MesinPalsu> buka(WidgetTester tester, {PemilihBerkas? pemilih}) async {
         pad: 2,
         nama: 'CLAP',
         pemilih: pemilih ?? PemilihPalsu(() => null),
+        klip: klip,
       ),
     ),
   );
@@ -167,5 +173,35 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('A:03  CLAP'), findsOneWidget);
+  });
+
+  testWidgets('SALIN lalu TEMPEL SUARA: pad sendiri tidak bisa ditempel', (
+    tester,
+  ) async {
+    final klip = PapanKlip();
+    final mesin = await buka(tester, klip: klip);
+    await tester.tap(find.byKey(const ValueKey('menu-suara')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SALIN SUARA'));
+    await tester.pumpAndSettle();
+    expect(klip.pad, 2);
+
+    await tester.tap(find.byKey(const ValueKey('menu-suara')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TEMPEL SUARA'));
+    await tester.pumpAndSettle();
+    expect(mesin.perintah, isEmpty);
+  });
+
+  testWidgets('TEMPEL SUARA dari pad lain memperbarui nama', (tester) async {
+    final klip = PapanKlip()..pad = 21;
+    final mesin = await buka(tester, klip: klip);
+    await tester.tap(find.byKey(const ValueKey('menu-suara')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TEMPEL SUARA'));
+    await tester.pumpAndSettle();
+
+    expect(mesin.perintah, ['salin-pad 21→2']);
+    expect(find.text('A:03  B6'), findsOneWidget);
   });
 }

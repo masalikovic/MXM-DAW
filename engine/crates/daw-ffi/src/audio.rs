@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use daw_core::bank::PadBank;
 use daw_core::engine::{Engine, EngineStats, EventSender};
-use daw_core::pad::PadParams;
+use daw_core::pad::{GROUP_COUNT, PAD_COUNT, PadParams};
+use daw_core::riwayat::History;
 use daw_core::sampel::Sampel;
 use daw_core::seq::{Pattern, SeqSettings, Sequence};
 
@@ -37,6 +38,98 @@ static SIMPAN_DIBLOKIR: AtomicBool = AtomicBool::new(false);
 
 fn naikkan_revisi() {
     REVISI_DASAR.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Riwayat undo/redo; hidup lebih lama daripada mesin, seperti model.
+static RIWAYAT: Mutex<Option<History<(PadBank, Sequence)>>> = Mutex::new(None);
+/// Waktu perubahan terakhir, untuk menggabungkan satu gerakan (mis. memutar
+/// kenop) menjadi satu langkah undo.
+static UBAH_TERAKHIR: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+/// Perubahan yang berjarak kurang dari ini digabung ke langkah undo yang sama.
+const JEDA_GABUNG: std::time::Duration = std::time::Duration::from_millis(700);
+
+/// Simpan keadaan sebelum perubahan sebagai langkah undo. Bila `paksa`
+/// salah, perubahan yang datang beruntun (< 0,7 s) digabung. Harus dipanggil
+/// sebelum mengunci `SISI_UI`.
+fn checkpoint(paksa: bool) {
+    let sekarang = std::time::Instant::now();
+    let mut terakhir = UBAH_TERAKHIR.lock().unwrap_or_else(PoisonError::into_inner);
+    let gabung = !paksa && terakhir.is_some_and(|t| sekarang.duration_since(t) < JEDA_GABUNG);
+    // Aksi tunggal (tempel, impor, rekam) tidak menelan gerakan sesudahnya.
+    *terakhir = if paksa { None } else { Some(sekarang) };
+    drop(terakhir);
+    if gabung {
+        return;
+    }
+    let model = salinan_model();
+    RIWAYAT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(History::default)
+        .checkpoint(model);
+}
+
+/// Pasang seluruh model (hasil undo/redo atau salin), di mesin bila berjalan.
+fn terapkan_model(bank: PadBank, seq: Sequence) -> bool {
+    let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(ui) = ui.as_mut() {
+        return ui.pengirim.apply_model(bank, seq);
+    }
+    drop(ui);
+    naikkan_revisi();
+    *kunci_bank() = Some(bank);
+    *kunci_sekuens() = Some(seq);
+    true
+}
+
+/// Undo (`maju` salah) atau redo (`maju` benar). `false` bila tidak ada.
+pub(crate) fn undo_redo(maju: bool) -> bool {
+    let sekarang = salinan_model();
+    let hasil = {
+        let mut r = RIWAYAT.lock().unwrap_or_else(PoisonError::into_inner);
+        let r = r.get_or_insert_with(History::default);
+        if maju {
+            r.redo(sekarang)
+        } else {
+            r.undo(sekarang)
+        }
+    };
+    let Some((bank, seq)) = hasil else {
+        return false;
+    };
+    // Perubahan berikutnya membuka langkah undo baru, tidak digabung.
+    *UBAH_TERAKHIR.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    terapkan_model(bank, seq)
+}
+
+/// (jumlah undo, jumlah redo).
+pub(crate) fn jumlah_riwayat() -> (usize, usize) {
+    RIWAYAT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .map_or((0, 0), History::counts)
+}
+
+/// Salin suara pad (nomor global).
+pub(crate) fn salin_pad(dari: usize, ke: usize) -> bool {
+    checkpoint(true);
+    let (mut bank, seq) = salinan_model();
+    bank.copy_pad(dari, ke) && terapkan_model(bank, seq)
+}
+
+/// Salin grup (16 suara + pola).
+pub(crate) fn salin_grup(dari: usize, ke: usize) -> bool {
+    if dari >= GROUP_COUNT || ke >= GROUP_COUNT {
+        return false;
+    }
+    checkpoint(true);
+    let (mut bank, mut seq) = salinan_model();
+    for i in 0..PAD_COUNT {
+        bank.copy_pad(dari * PAD_COUNT + i, ke * PAD_COUNT + i);
+    }
+    seq.patterns[ke] = seq.patterns[dari].clone();
+    terapkan_model(bank, seq)
 }
 
 struct SisiUi {
@@ -125,6 +218,7 @@ pub(crate) fn baca<R>(f: impl FnOnce(&PadBank) -> R) -> R {
 
 /// Ubah parameter pad. Saat mesin berjalan, perubahan langsung terdengar.
 pub(crate) fn atur_pad(pad: usize, params: &PadParams) -> bool {
+    checkpoint(false);
     let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(ui) = ui.as_mut() {
         return ui.pengirim.set_pad(pad, params);
@@ -148,6 +242,7 @@ pub(crate) fn baca_seq<R>(f: impl FnOnce(&Sequence) -> R) -> R {
 
 /// Ganti pola satu grup dan/atau pengaturan sequencer.
 pub(crate) fn atur_seq(pola: Option<(usize, Pattern)>, pengaturan: Option<SeqSettings>) -> bool {
+    checkpoint(false);
     let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(ui) = ui.as_mut() {
         let mut ok = true;
@@ -204,6 +299,8 @@ pub(crate) fn pasang_model(bank: PadBank, seq: Sequence) -> bool {
     }
     *kunci_bank() = Some(bank);
     *kunci_sekuens() = Some(seq);
+    // Riwayat proyek lain tidak berlaku untuk proyek yang baru dibuka.
+    *RIWAYAT.lock().unwrap_or_else(PoisonError::into_inner) = None;
     true
 }
 
@@ -218,6 +315,10 @@ pub(crate) fn simpan_diblokir() -> bool {
 
 /// Perintah transport; `false` bila mesin belum berjalan.
 pub(crate) fn transport(main: bool, rekam: bool) -> bool {
+    if main && rekam {
+        // Satu sesi rekaman = satu langkah undo.
+        checkpoint(true);
+    }
     SISI_UI
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -227,6 +328,9 @@ pub(crate) fn transport(main: bool, rekam: bool) -> bool {
 
 /// Rekam hidup/mati sambil bermain (overdub).
 pub(crate) fn atur_rekam(rekam: bool) -> bool {
+    if rekam {
+        checkpoint(true);
+    }
     SISI_UI
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -249,6 +353,7 @@ pub(crate) fn status_transport() -> (bool, bool, i64) {
 
 /// Ganti sampel pad.
 pub(crate) fn atur_sampel(pad: usize, nama: &str, sampel: Sampel) -> bool {
+    checkpoint(true);
     let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(ui) = ui.as_mut() {
         return ui.pengirim.set_sample(pad, nama, sampel);
@@ -310,6 +415,7 @@ pub(crate) fn pad_berbunyi(grup: usize) -> u32 {
 
 /// Mute atau buka grup.
 pub(crate) fn atur_mute(grup: usize, mute: bool) -> bool {
+    checkpoint(true);
     let mut ui = SISI_UI.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(ui) = ui.as_mut() {
         return ui.pengirim.set_mute(grup, mute);
@@ -420,8 +526,9 @@ pub(crate) use adapter::{berhenti, kesehatan, mulai};
 #[cfg(test)]
 mod tests {
     use super::{
-        Sampel, atur_pad, atur_sampel, baca, ketuk_nada, lepas_mesin, lepas_nada,
-        mxm_engine_render, nama_pad, pad_berbunyi, pasang_mesin, statistik,
+        Sampel, atur_pad, atur_sampel, baca, jumlah_riwayat, ketuk_nada, lepas_mesin, lepas_nada,
+        mxm_engine_render, nama_pad, pad_berbunyi, pasang_mesin, salin_grup, salin_pad, statistik,
+        undo_redo,
     };
     use crate::api::{
         NoteData, SeqConfig, group_mutes, project_load, project_revision, project_save, seq_config,
@@ -559,6 +666,46 @@ mod tests {
         assert_eq!(seq_config(2).bars, 2);
         assert_eq!(group_mutes(), [false, false, true, false]);
         assert!(!transport_play(false), "tanpa mesin tidak bisa main");
+
+        // Undo/redo: tempel = satu langkah, satu gerakan kenop = satu langkah,
+        // baik saat mesin mati maupun berjalan.
+        let pitch3 = || baca(|b| b.params(3).unwrap().pitch);
+        let (u0, _) = jumlah_riwayat();
+        assert!(salin_pad(7, 8));
+        assert_eq!(nama_pad()[8], "VOKAL-SA");
+        let mut p = baca(|b| *b.params(3).unwrap());
+        for i in 1..=3_u8 {
+            p.pitch = 5.0 + f32::from(i);
+            assert!(atur_pad(3, &p));
+        }
+        assert_eq!(jumlah_riwayat(), (u0 + 2, 0));
+        assert!(undo_redo(false));
+        assert!(
+            (pitch3() - 5.0).abs() < f32::EPSILON,
+            "tiga putaran batal sekaligus"
+        );
+        assert!(undo_redo(false));
+        assert_ne!(nama_pad()[8], "VOKAL-SA");
+        pasang_mesin();
+        assert!(undo_redo(true), "redo saat mesin berjalan");
+        assert_eq!(nama_pad()[8], "VOKAL-SA");
+        assert!(ketuk_nada(8, 1.0, 0));
+        assert!(
+            render(512).iter().any(|v| v.abs() > 0.1),
+            "suara tempelan berbunyi"
+        );
+        assert!(salin_grup(2, 3));
+        assert_eq!(transport_state(3).note_count, 2, "pola ikut tersalin");
+        assert!(undo_redo(false));
+        assert_eq!(transport_state(3).note_count, 0);
+        assert!(!salin_grup(2, 4));
+        lepas_mesin();
+        assert_eq!(
+            jumlah_riwayat().1,
+            1,
+            "aksi baru menghapus redo; tersisa redo salin grup"
+        );
+        assert!((pitch3() - 5.0).abs() < f32::EPSILON);
 
         // Proyek: simpan, ubah, buka lagi → kembali ke yang disimpan.
         let dir = std::env::temp_dir().join(format!("mxm-daw-ffi-{}", std::process::id()));
