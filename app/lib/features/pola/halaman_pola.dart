@@ -14,16 +14,20 @@ class HalamanPola extends StatefulWidget {
   const HalamanPola({
     required this.audio,
     required this.nama,
+    this.grup = 0,
     this.pad = 0,
     super.key,
   });
 
   final MesinAudio audio;
 
-  /// Nama suara ke-16 pad.
+  /// Grup yang polanya disunting (0..3).
+  final int grup;
+
+  /// Nama suara 16 pad grup ini.
   final List<String> nama;
 
-  /// Pad yang dipilih saat halaman dibuka.
+  /// Pad (lokal 0..15) yang dipilih saat halaman dibuka.
   final int pad;
 
   @override
@@ -50,9 +54,9 @@ class _HalamanPolaState extends State<HalamanPola> {
   @override
   void initState() {
     super.initState();
-    _seq = widget.audio.pengaturanSeq();
-    _not = widget.audio.notPola();
-    _status = widget.audio.statusTransport();
+    _seq = widget.audio.pengaturanSeq(widget.grup);
+    _not = widget.audio.notPola(widget.grup);
+    _status = widget.audio.statusTransport(widget.grup);
     _penyegar = Timer.periodic(
       const Duration(milliseconds: 33),
       (_) => _segarkan(),
@@ -68,24 +72,26 @@ class _HalamanPolaState extends State<HalamanPola> {
   /// Playhead dan rekaman yang masuk saat halaman terbuka.
   void _segarkan() {
     if (!mounted) return;
-    final status = widget.audio.statusTransport();
+    final status = widget.audio.statusTransport(widget.grup);
     if (status == _status) return;
     setState(() {
       if (status.noteCount != _status.noteCount) {
-        _not = widget.audio.notPola();
+        _not = widget.audio.notPola(widget.grup);
       }
       _status = status;
     });
   }
 
   void _aturNot(List<NoteData> baru) {
-    if (widget.audio.aturNotPola(baru)) {
-      setState(() => _not = widget.audio.notPola());
+    if (widget.audio.aturNotPola(widget.grup, baru)) {
+      setState(() => _not = widget.audio.notPola(widget.grup));
     }
   }
 
   void _aturSeq(SeqConfig Function(SeqConfig) ubah) {
-    setState(() => _seq = widget.audio.aturPengaturanSeq(ubah(_seq)));
+    setState(
+      () => _seq = widget.audio.aturPengaturanSeq(widget.grup, ubah(_seq)),
+    );
   }
 
   @override
@@ -101,7 +107,8 @@ class _HalamanPolaState extends State<HalamanPola> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '${_seq.bars} BAR  ·  PAD ${_pad + 1} '
+          '${'ABCD'[widget.grup.clamp(0, 3)]} · ${_seq.bars} BAR  ·  '
+          'PAD ${_pad + 1} '
           '${_pad < widget.nama.length ? widget.nama[_pad] : ''}',
         ),
         actions: [

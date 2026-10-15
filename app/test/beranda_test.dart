@@ -38,10 +38,20 @@ class MesinPalsu implements MesinAudio {
     return true;
   }
 
-  @override
-  int padBerbunyi() => berbunyi;
+  final grupBerbunyi = <int>[];
 
-  final nama = [for (var i = 1; i <= 16; i++) 'SUARA$i'];
+  @override
+  int padBerbunyi(int grup) {
+    grupBerbunyi.add(grup);
+    return berbunyi;
+  }
+
+  // 64 nama: grup A = SUARA1..16, B = B1..16, dst.
+  final nama = [
+    for (var i = 1; i <= 16; i++) 'SUARA$i',
+    for (final g in ['B', 'C', 'D'])
+      for (var i = 1; i <= 16; i++) '$g$i',
+  ];
 
   @override
   List<String> namaPad() => List.of(nama);
@@ -87,23 +97,36 @@ class MesinPalsu implements MesinAudio {
   }
 
   @override
-  TransportState statusTransport() => status;
+  TransportState statusTransport(int grup) => status;
 
   @override
-  SeqConfig pengaturanSeq() => seq;
+  SeqConfig pengaturanSeq(int grup) => seq;
 
   @override
-  SeqConfig aturPengaturanSeq(SeqConfig nilai) => seq = nilai.salin(
+  SeqConfig aturPengaturanSeq(int grup, SeqConfig nilai) => seq = nilai.salin(
     bpm: nilai.bpm.clamp(40, 240),
     bars: nilai.bars.clamp(1, 16),
   );
 
   @override
-  List<NoteData> notPola() => not;
+  List<NoteData> notPola(int grup) => not;
 
   @override
-  bool aturNotPola(List<NoteData> n) {
+  bool aturNotPola(int grup, List<NoteData> n) {
+    grupPola = grup;
     not = n;
+    return true;
+  }
+
+  int? grupPola;
+  var mute = [false, false, false, false];
+
+  @override
+  List<bool> muteGrup() => List.of(mute);
+
+  @override
+  bool aturMute(int grup, {required bool mute}) {
+    this.mute[grup] = mute;
     return true;
   }
 
@@ -122,7 +145,7 @@ class MesinPalsu implements MesinAudio {
     return pengaturanPad[pad] = pengaturanBawaan.salin(end: isi.length);
   }
 
-  final pengaturanPad = List.filled(16, pengaturanBawaan);
+  final pengaturanPad = List.filled(64, pengaturanBawaan);
   final perubahan = <(int, PadSettings)>[];
 
   @override
@@ -321,7 +344,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 40));
     expect(find.text('■ STOP'), findsOneWidget);
     expect(find.text(' 1.2'), findsOneWidget);
-    expect(find.text('POLA 1 BAR   NOT 3'), findsOneWidget);
+    expect(find.text('POLA A 1 BAR   NOT 3'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('main')));
     expect(mesin.perintah, ['main', 'stop']);
@@ -392,11 +415,56 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('grid')));
     await tester.pumpAndSettle();
 
-    expect(find.text('1 BAR  ·  PAD 10 SUARA10'), findsOneWidget);
+    expect(find.text('A · 1 BAR  ·  PAD 10 SUARA10'), findsOneWidget);
     final chip = tester.widget<ChoiceChip>(
       find.byKey(const ValueKey('pilih-pad-9')),
     );
     expect(chip.selected, isTrue);
+  });
+
+  testWidgets('grup B: pad, nama, LED, dan ketukan memakai nomor global', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('grup-1')));
+    await tester.pump(const Duration(milliseconds: 40));
+
+    expect(find.text('B1'), findsOneWidget);
+    expect(find.text('SUARA1'), findsNothing);
+    expect(mesin.grupBerbunyi.last, 1, reason: 'LED dibaca dari grup B');
+    expect(find.textContaining('POLA B'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('pad-2')));
+    expect(mesin.ketukan.last.$1, 18, reason: 'grup B pad 3 = 16 + 2');
+    expect(mesin.lepasan.last, 18);
+  });
+
+  testWidgets('tahan grup = mute; HAPUS mengosongkan pola grup terpilih', (
+    tester,
+  ) async {
+    final mesin = await pasang(tester);
+    await tester.longPress(find.byKey(const ValueKey('grup-2')));
+    await tester.pump();
+    expect(mesin.mute, [false, false, true, false]);
+    expect(find.byKey(const ValueKey('mute-2')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('grup-3')));
+    await tester.pump();
+    await tester.longPress(find.byKey(const ValueKey('hapus')));
+    expect(mesin.grupPola, 3);
+  });
+
+  testWidgets('tekan lama pad grup D membuka Sound pad global', (tester) async {
+    await pasang(tester);
+    await tester.tap(find.byKey(const ValueKey('grup-3')));
+    await tester.pump();
+    final jari = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('pad-0'))),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    await jari.up();
+    expect(find.text('D:01  D1'), findsOneWidget);
   });
 
   testWidgets('aplikasi ke latar → stream berhenti; kembali → mulai lagi', (

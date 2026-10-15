@@ -72,11 +72,14 @@ fn frame_harapan(tick: f64, bpm: f64) -> usize {
 fn not_jatuh_tepat_di_sampelnya_setelah_100_bar() {
     let bpm = 123.4;
     let (mut m, mut k) = mesin_impuls(bpm as f32);
-    k.set_pattern(Pattern {
-        bars: 1,
-        notes: vec![not(0, 0), not(1_000, 0), not(2_401, 0)],
-        ..Pattern::default()
-    });
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0), not(1_000, 0), not(2_401, 0)],
+            ..Pattern::default()
+        },
+    );
     k.transport(true, false);
     let bar = 100;
     let frames = frame_harapan(f64::from(bar * TICKS_PER_BAR), bpm);
@@ -93,13 +96,16 @@ fn not_jatuh_tepat_di_sampelnya_setelah_100_bar() {
 fn ukuran_blok_tidak_mengubah_hasil() {
     let jalankan = |blok| {
         let (mut m, mut k) = Engine::new(SR);
-        k.set_pattern(Pattern {
-            bars: 2,
-            notes: (0..32)
-                .map(|i| not(i * STEP_TICKS, (i % 16) as u8))
-                .collect(),
-            ..Pattern::default()
-        });
+        k.set_pattern(
+            0,
+            Pattern {
+                bars: 2,
+                notes: (0..32)
+                    .map(|i| not(i * STEP_TICKS, (i % 16) as u8))
+                    .collect(),
+                ..Pattern::default()
+            },
+        );
         k.transport(true, false);
         render(&mut m, 96_000, blok)
     };
@@ -118,11 +124,14 @@ fn swing_menggeser_langkah_kedua() {
         metronome: false,
         ..SeqSettings::default()
     });
-    k.set_pattern(Pattern {
-        bars: 1,
-        notes: vec![not(0, 0), not(STEP_TICKS, 0)],
-        ..Pattern::default()
-    });
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0), not(STEP_TICKS, 0)],
+            ..Pattern::default()
+        },
+    );
     k.transport(true, false);
     let awal = awal_bunyi(&render(&mut m, 24_000, 256));
     let geser = (0.66 - 0.5) * 2.0 * f64::from(STEP_TICKS);
@@ -132,11 +141,14 @@ fn swing_menggeser_langkah_kedua() {
 #[test]
 fn berhenti_dan_mulai_lagi_dari_awal() {
     let (mut m, mut k) = mesin_impuls(120.0);
-    k.set_pattern(Pattern {
-        bars: 1,
-        notes: vec![not(0, 0)],
-        ..Pattern::default()
-    });
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0)],
+            ..Pattern::default()
+        },
+    );
     k.transport(true, false);
     render(&mut m, 30_000, 256);
     assert!(m.stats().playing());
@@ -158,11 +170,14 @@ fn count_in_satu_bar_dengan_metronom_lalu_pola() {
         count_in_bars: 1,
         ..SeqSettings::default()
     });
-    k.set_pattern(Pattern {
-        bars: 1,
-        notes: vec![not(0, 0)],
-        ..Pattern::default()
-    });
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0)],
+            ..Pattern::default()
+        },
+    );
     k.transport(true, true);
     // Satu bar count-in (2 s) + sedikit.
     let x = render(&mut m, 97_000, 256);
@@ -200,7 +215,7 @@ fn rekaman_masuk_ke_pola_dengan_kompensasi_latensi() {
     render(&mut m, 256, 256);
 
     assert_eq!(k.poll_recording(25.0), 1);
-    let n = k.sequence().pattern.notes[0];
+    let n = k.sequence().patterns[0].notes[0];
     assert_eq!(n.pad, 3);
     assert!((n.velocity - 0.7).abs() < 1e-6);
     // 960 − 25 ms × 1,92 = 912.
@@ -226,7 +241,7 @@ fn rekaman_di_ujung_pola_dibungkus_ke_awal() {
     k.hit(0, 1.0); // tick 0, tetapi kompensasi memundurkannya ke bar sebelumnya
     render(&mut m, 256, 256);
     k.poll_recording(10.0);
-    let n = k.sequence().pattern.notes[0];
+    let n = k.sequence().patterns[0].notes[0];
     assert_eq!(n.tick, TICKS_PER_BAR - 19, "{n:?}"); // 10 ms ≈ 19,2 tick
 }
 
@@ -242,11 +257,14 @@ fn ketukan_saat_count_in_tidak_direkam() {
 #[test]
 fn ganti_tempo_saat_bermain_tetap_sinkron() {
     let (mut m, mut k) = mesin_impuls(120.0);
-    k.set_pattern(Pattern {
-        bars: 1,
-        notes: vec![not(0, 0), not(1_920, 0)],
-        ..Pattern::default()
-    });
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0), not(1_920, 0)],
+            ..Pattern::default()
+        },
+    );
     k.transport(true, false);
     render(&mut m, 24_000, 256); // tick 960
     k.set_settings(&SeqSettings {
@@ -267,14 +285,17 @@ fn stop_melepas_pad_gate() {
         ..*k.pad(1).unwrap()
     };
     k.set_pad(1, &p);
-    k.set_pattern(Pattern {
-        bars: 1,
-        notes: vec![Note {
-            length: TICKS_PER_BAR,
-            ..not(0, 1)
-        }],
-        ..Pattern::default()
-    });
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![Note {
+                length: TICKS_PER_BAR,
+                ..not(0, 1)
+            }],
+            ..Pattern::default()
+        },
+    );
     k.transport(true, false);
     render(&mut m, 10_000, 256);
     assert!(m.stats().voices_active() > 0);
@@ -290,13 +311,67 @@ fn model_sequencer_dibawa_ke_mesin_baru() {
         bpm: 97.0,
         ..SeqSettings::default()
     });
-    k.set_pattern(Pattern {
-        bars: 4,
-        notes: vec![not(0, 0)],
-        ..Pattern::default()
-    });
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 4,
+            notes: vec![not(0, 0)],
+            ..Pattern::default()
+        },
+    );
     let (bank, seq) = k.into_model();
     let (_m, k) = Engine::with_model(SR, bank, seq);
     assert!((k.sequence().settings.bpm - 97.0).abs() < 1e-6);
-    assert_eq!(k.sequence().pattern.bars, 4);
+    assert_eq!(k.sequence().patterns[0].bars, 4);
+}
+
+#[test]
+fn empat_grup_berputar_dengan_panjang_sendiri_dan_mute() {
+    let (mut m, mut k) = mesin_impuls(120.0);
+    // Grup A: 1 bar, not di awal. Grup B: 2 bar, not di awal (pad 16..).
+    let mut x = vec![0.0; 64];
+    x[0] = 1.0;
+    k.set_sample(16, "IMPULS", Sampel::from_f32(&x, 1, 48_000));
+    k.set_pattern(
+        0,
+        Pattern {
+            bars: 1,
+            notes: vec![not(0, 0)],
+            ..Pattern::default()
+        },
+    );
+    k.set_pattern(
+        1,
+        Pattern {
+            bars: 2,
+            notes: vec![not(960, 0)],
+            ..Pattern::default()
+        },
+    );
+    k.transport(true, false);
+    // 120 BPM: 1 bar = 96 000 frame. Dalam 4 bar: A berbunyi 4×, B 2×.
+    let awal = awal_bunyi(&render(&mut m, 4 * 96_000, 256));
+    assert_eq!(awal, [0, 24_000, 96_000, 192_000, 216_000, 288_000]);
+
+    // Mute grup B: polanya diam, A tetap.
+    k.set_mute(1, true);
+    let awal = awal_bunyi(&render(&mut m, 4 * 96_000, 256));
+    assert_eq!(awal.len(), 4);
+    assert_eq!(k.sequence().mutes, [false, true, false, false]);
+}
+
+#[test]
+fn rekaman_masuk_ke_pola_grupnya() {
+    let (mut m, mut k) = Engine::new(SR);
+    k.set_settings(&SeqSettings {
+        count_in_bars: 0,
+        metronome: false,
+        ..SeqSettings::default()
+    });
+    k.transport(true, true);
+    k.hit(16 * 2 + 5, 1.0); // grup C, pad 6
+    render(&mut m, 256, 256);
+    k.poll_recording(0.0);
+    assert!(k.sequence().patterns[0].notes.is_empty());
+    assert_eq!(k.sequence().patterns[2].notes[0].pad, 5);
 }

@@ -17,7 +17,11 @@ Future<MesinPalsu> buka(WidgetTester tester, {int bars = 1}) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: mxmTheme(MxmTokens.light, Brightness.light),
-      home: HalamanPola(audio: mesin, nama: mesin.namaPad(), pad: 1),
+      home: HalamanPola(
+        audio: mesin,
+        nama: mesin.namaPad().take(16).toList(),
+        pad: 1,
+      ),
     ),
   );
   return mesin;
@@ -103,10 +107,10 @@ void main() {
 
   testWidgets('judul menyebut pad yang sedang diedit', (tester) async {
     await buka(tester);
-    expect(find.text('1 BAR  ·  PAD 2 SUARA2'), findsOneWidget);
+    expect(find.text('A · 1 BAR  ·  PAD 2 SUARA2'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('pilih-pad-0')));
     await tester.pump();
-    expect(find.text('1 BAR  ·  PAD 1 SUARA1'), findsOneWidget);
+    expect(find.text('A · 1 BAR  ·  PAD 1 SUARA1'), findsOneWidget);
   });
 
   testWidgets('tombol main di halaman Pola', (tester) async {

@@ -118,11 +118,14 @@ fn render_demo() -> Vec<f32> {
         metronome: false,
         count_in_bars: 0,
     });
-    kirim.set_pattern(Pattern {
-        bars: 4,
-        notes,
-        ..Pattern::default()
-    });
+    kirim.set_pattern(
+        0,
+        Pattern {
+            bars: 4,
+            notes,
+            ..Pattern::default()
+        },
+    );
     kirim.transport(true, false);
     // 4 bar pada 96 BPM = 10 detik, ditambah 1 detik ekor.
     let ticks = f64::from(4 * TICKS_PER_BAR);

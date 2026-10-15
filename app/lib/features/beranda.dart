@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../design_system/tokens.dart';
 import '../engine/audio.dart';
 import '../engine/engine.dart';
+import 'grup.dart';
 import 'pad_grid.dart';
 import 'pola/halaman_pola.dart';
 import 'suara/halaman_suara.dart';
@@ -12,7 +13,7 @@ import 'transport/tap_tempo.dart';
 import 'transport/transport.dart';
 
 /// Layar utama (Pocket, rencana §6.1): panel kesehatan mesin, layar segmen,
-/// 16 pad, dan transport sequencer.
+/// grup A–D, 16 pad grup terpilih, dan transport sequencer.
 class Beranda extends StatefulWidget {
   const Beranda({required this.engine, this.audio, super.key});
 
@@ -43,7 +44,12 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   );
   SeqConfig? _seq;
 
-  /// Pad terakhir yang diketuk; dipilih saat halaman Pola dibuka.
+  /// Grup yang ditampilkan (0..3) dan grup yang di-mute.
+  int _grup = 0;
+  List<bool> _mute = const [false, false, false, false];
+
+  /// Pad terakhir yang diketuk (lokal 0..15); dipilih saat halaman Pola
+  /// dibuka.
   int _padTerakhir = 0;
   final _tapTempo = TapTempo();
   final _jam = Stopwatch()..start();
@@ -54,7 +60,8 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     if (widget.audio != null) {
       _nama = widget.audio!.namaPad();
-      _seq = widget.audio!.pengaturanSeq();
+      _seq = widget.audio!.pengaturanSeq(_grup);
+      _mute = widget.audio!.muteGrup();
       unawaited(_mulai());
       _penyegar = Timer.periodic(
         const Duration(milliseconds: 500),
@@ -112,8 +119,30 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
     setState(() => _kesehatan = audio.kesehatan());
   }
 
-  void _bukaSuara(int pad) {
+  /// Nomor pad global dari pad lokal grup terpilih.
+  int _global(int pad) => _grup * 16 + pad;
+
+  /// Nama 16 pad grup terpilih.
+  List<String> get _namaGrup =>
+      _nama.skip(_grup * 16).take(16).toList(growable: false);
+
+  void _pilihGrup(int grup) {
+    setState(() {
+      _grup = grup;
+      _seq = widget.audio!.pengaturanSeq(grup);
+    });
+    _segarkanLed();
+  }
+
+  void _alihMute(int grup) {
     final audio = widget.audio!;
+    audio.aturMute(grup, mute: !_mute[grup]);
+    setState(() => _mute = audio.muteGrup());
+  }
+
+  void _bukaSuara(int padLokal) {
+    final audio = widget.audio!;
+    final pad = _global(padLokal);
     // Pad yang ditahan dilepas dulu, supaya mode gate/loop tidak terus berbunyi.
     audio.lepas(pad);
     unawaited(
@@ -137,8 +166,8 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   void _segarkanLed() {
     final audio = widget.audio;
     if (audio == null || !mounted) return;
-    final berbunyi = audio.padBerbunyi();
-    final status = audio.statusTransport();
+    final berbunyi = audio.padBerbunyi(_grup);
+    final status = audio.statusTransport(_grup);
     if (berbunyi != _berbunyi || status != _status) {
       setState(() {
         _berbunyi = berbunyi;
@@ -166,7 +195,7 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
   void _aturSeq(SeqConfig Function(SeqConfig) ubah) {
     final seq = _seq;
     if (seq == null) return;
-    setState(() => _seq = widget.audio!.aturPengaturanSeq(ubah(seq)));
+    setState(() => _seq = widget.audio!.aturPengaturanSeq(_grup, ubah(seq)));
   }
 
   void _tap() {
@@ -180,19 +209,23 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
       Navigator.of(context)
           .push(
             MaterialPageRoute<void>(
-              builder: (_) =>
-                  HalamanPola(audio: audio, nama: _nama, pad: _padTerakhir),
+              builder: (_) => HalamanPola(
+                audio: audio,
+                grup: _grup,
+                nama: _namaGrup,
+                pad: _padTerakhir,
+              ),
             ),
           )
           // Swing dan kuantisasi bisa berubah di halaman Pola.
           .then((_) {
-            if (mounted) setState(() => _seq = audio.pengaturanSeq());
+            if (mounted) setState(() => _seq = audio.pengaturanSeq(_grup));
           }),
     );
   }
 
   void _hapusPola() {
-    widget.audio!.aturNotPola(const []);
+    widget.audio!.aturNotPola(_grup, const []);
     _segarkanLed();
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Pola dikosongkan')));
@@ -231,21 +264,37 @@ class _BerandaState extends State<Beranda> with WidgetsBindingObserver {
               PanelKesehatan(kesehatan: _kesehatan, galat: _galat),
               if (_seq case final seq?) ...[
                 const SizedBox(height: 8),
-                LayarSegmen(status: _status, seq: seq),
+                LayarSegmen(grup: _grup, status: _status, seq: seq),
               ],
               const Spacer(),
-              Center(
-                child: KisiPad(
-                  aktif: widget.audio != null,
-                  nama: _nama,
-                  berbunyi: _berbunyi,
-                  onKetuk: (pad, v) {
-                    _padTerakhir = pad;
-                    widget.audio?.ketuk(pad, v);
-                  },
-                  onLepas: (pad) => widget.audio?.lepas(pad),
-                  onTahan: widget.audio == null ? null : _bukaSuara,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  KolomGrup(
+                    aktif: widget.audio != null,
+                    grup: _grup,
+                    mute: _mute,
+                    onPilih: _pilihGrup,
+                    onTahan: _alihMute,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Center(
+                      child: KisiPad(
+                        aktif: widget.audio != null,
+                        grup: _grup,
+                        nama: _namaGrup,
+                        berbunyi: _berbunyi,
+                        onKetuk: (pad, v) {
+                          _padTerakhir = pad;
+                          widget.audio?.ketuk(_global(pad), v);
+                        },
+                        onLepas: (pad) => widget.audio?.lepas(_global(pad)),
+                        onTahan: widget.audio == null ? null : _bukaSuara,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const Spacer(),
               if (_seq case final seq?)

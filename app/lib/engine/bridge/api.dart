@@ -7,6 +7,7 @@ import 'frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `grup`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Versi mesin, mis. `"0.1.0"`.
@@ -38,10 +39,12 @@ bool padRelease({required int pad}) =>
     RustLib.instance.api.crateApiPadRelease(pad: pad);
 
 /// Bit ke-`n` menyala bila pad `n` sedang berbunyi; untuk LED pad. Murah
-/// (satu baca atomik), jadi aman dipanggil 30 kali per detik.
-int padsSounding() => RustLib.instance.api.crateApiPadsSounding();
+/// (satu baca atomik), jadi aman dipanggil 30 kali per detik. Bit ke-`n` =
+/// pad `n` di grup `group` (0..4).
+int padsSounding({required int group}) =>
+    RustLib.instance.api.crateApiPadsSounding(group: group);
 
-/// Nama suara ke-16 pad, mis. `"KICK"`.
+/// Nama suara ke-64 pad (nomor global = grup × 16 + pad), mis. `"KICK"`.
 List<String> padNames() => RustLib.instance.api.crateApiPadNames();
 
 /// Parameter pad saat ini, atau `None` bila nomor pad salah.
@@ -83,21 +86,30 @@ Future<PadSettings> padImportWav({
   bytes: bytes,
 );
 
-/// Pengaturan sequencer dan pola saat ini.
-SeqConfig seqConfig() => RustLib.instance.api.crateApiSeqConfig();
+/// Pengaturan sequencer dan pola grup `group` saat ini.
+SeqConfig seqConfig({required int group}) =>
+    RustLib.instance.api.crateApiSeqConfig(group: group);
 
 /// Simpan pengaturan (nilai dibatasi ke jangkauan sah). Mengembalikan nilai
 /// yang benar-benar tersimpan.
-SeqConfig setSeqConfig({required SeqConfig config}) =>
-    RustLib.instance.api.crateApiSetSeqConfig(config: config);
+SeqConfig setSeqConfig({required int group, required SeqConfig config}) =>
+    RustLib.instance.api.crateApiSetSeqConfig(group: group, config: config);
 
-/// Semua not pola (tick mentah).
-List<NoteData> patternNotes() => RustLib.instance.api.crateApiPatternNotes();
+/// Semua not pola grup `group` (tick mentah, pad lokal 0..16).
+List<NoteData> patternNotes({required int group}) =>
+    RustLib.instance.api.crateApiPatternNotes(group: group);
 
 /// Ganti semua not pola (mis. dari grid langkah, atau dikosongkan). Not di
 /// luar panjang pola atau untuk pad yang tidak ada dibuang.
-bool setPatternNotes({required List<NoteData> notes}) =>
-    RustLib.instance.api.crateApiSetPatternNotes(notes: notes);
+bool setPatternNotes({required int group, required List<NoteData> notes}) =>
+    RustLib.instance.api.crateApiSetPatternNotes(group: group, notes: notes);
+
+/// Grup yang di-mute (A–D).
+List<bool> groupMutes() => RustLib.instance.api.crateApiGroupMutes();
+
+/// Mute grup: polanya diam, pad-nya tetap bisa dimainkan langsung.
+bool setGroupMute({required int group, required bool mute}) =>
+    RustLib.instance.api.crateApiSetGroupMute(group: group, mute: mute);
 
 /// Mulai bermain dari awal pola. `record`: rekam ketukan (didahului
 /// count-in). `false` bila mesin belum berjalan.
@@ -111,10 +123,11 @@ bool transportStop() => RustLib.instance.api.crateApiTransportStop();
 bool transportRecord({required bool enabled}) =>
     RustLib.instance.api.crateApiTransportRecord(enabled: enabled);
 
-/// Posisi transport. Dipanggil ±30 kali per detik oleh layar; sekaligus
-/// memasukkan ketukan yang direkam ke pola.
-TransportState transportState() =>
-    RustLib.instance.api.crateApiTransportState();
+/// Posisi transport, dihitung terhadap panjang pola grup `group`. Dipanggil
+/// ±30 kali per detik oleh layar; sekaligus memasukkan ketukan yang direkam
+/// ke pola.
+TransportState transportState({required int group}) =>
+    RustLib.instance.api.crateApiTransportState(group: group);
 
 /// Angka kesehatan mesin saat ini.
 AudioHealth audioHealth() => RustLib.instance.api.crateApiAudioHealth();
